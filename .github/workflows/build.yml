@@ -1,0 +1,30 @@
+```yaml
+name: Build APK
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip Project
+        run: |
+          unzip -q *.zip
+          # Эта команда нужна, если внутри ZIP оказалась еще одна папка (например, Uchet/)
+          if [ -d "Uchet" ]; then mv Uchet/* . ; mv Uchet/.* . 2>/dev/null || true ; rmdir Uchet; fi
+          ls -la
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Uchet-APK
+          path: app/build/outputs/apk/debug/*.apk
+```
