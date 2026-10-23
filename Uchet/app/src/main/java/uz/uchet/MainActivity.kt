@@ -1,14 +1,22 @@
 package uz.uchet
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -19,13 +27,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -137,88 +148,7 @@ fun SumRow(label: String, v: Long, color: Color, bold: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, fontWeight = if (bold) FontWeight.Bold else null)
         Text("${v.money()} UZS", color = color, fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium)
-  import android.net.Uri
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.os.Build
-import android.provider.MediaStore
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-
-// Функция для конвертации картинки из галереи в Bitmap
-fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
-    return try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
-        } else {
-            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-        }
-    } catch (e: Exception) { null }
-}
-
-// Вставьте этот код внутрь вашего главного экрана (например, в Column или Row)
-@Composable
-fun ScreenshotScannerButton(onDataExtracted: (amount: Double, isIncome: Boolean, description: String) -> Unit) {
-    val context = LocalContext.current
-    
-    // Лаунчер для выбора картинки из галереи
-    val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            val bitmap = uriToBitmap(context, it)
-            bitmap?.let { bmp ->
-                // Запускаем распознавание текста
-                val image = InputImage.fromBitmap(bmp, 0)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                
-                recognizer.process(image)
-                    .addOnSuccessListener { visionText ->
-                        val text = visionText.text
-                        // Парсим текст (ищем сумму и тип операции)
-                        val parsedData = parseSmsText(text)
-                        if (parsedData != null) {
-                            onDataExtracted(parsedData.first, parsedData.second, parsedData.third)
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        // Ошибка распознавания
-                    }
-            }
-        }
     }
-
-    Button(onClick = { imagePicker.launch("image/*") }) {
-        Text("Загрузить скриншот СМС")
-    }
-}
-
-// Функция-парсер: ищет в тексте сумму и слова "доход/расход"
-fun parseSmsText(text: String): Triple<Double, Boolean, String>? {
-    val lowerText = text.lowercase()
-    
-    // Ищем суммы (числа с пробелами или без, перед или после которых идет UZS, сум, руб)
-    val amountRegex = Regex("""(\d[\d\s]*)\s*(uzs|сум|руб|\$|€)""")
-    val match = amountRegex.find(lowerText) ?: return null
-    
-    // Убираем пробелы из найденной суммы и делаем из нее число
-    val amountStr = match.groupValues[1].replace(" ", "")
-    val amount = amountStr.toDoubleOrNull() ?: return null
-    
-    // Определяем тип операции по ключевым словам
-    val isIncome = lowerText.contains("пополнение") || lowerText.contains("зачисление") || lowerText.contains("перевод от") || lowerText.contains("kirdi")
-    
-    // Берем первые 30 символов как описание
-    val description = text.take(30).replace("\n", " ")
-    
-    return Triple(amount, isIncome, description)  }
 }
 
 @Composable
@@ -253,12 +183,54 @@ fun TxDialog(initial: Tx?, cards: List<String>, onDismiss: () -> Unit, onSave: (
     var desc by remember { mutableStateOf(initial?.description ?: "") }
     var date by remember { mutableStateOf(initDt.format(DATE_FMT)) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(false) }
+
+    // Лаунчер для выбора картинки из галереи
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            isLoading = true
+            val bitmap = uriToBitmap(context, it)
+            bitmap?.let { bmp ->
+                val image = InputImage.fromBitmap(bmp, 0)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        val parsedData = parseSmsText(visionText.text)
+                        if (parsedData != null) {
+                            amount = parsedData.first.toBigDecimal().toPlainString()
+                            type = if (parsedData.second) TxType.INCOME else TxType.EXPENSE
+                            desc = parsedData.third
+                        }
+                        isLoading = false
+                    }
+                    .addOnFailureListener { 
+                        isLoading = false
+                        error = "Не удалось распознать текст"
+                    }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Новая операция" else "Изменить") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                
+                // Кнопка сканирования
+                Button(
+                    onClick = { imagePicker.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
+                ) {
+                    Text(if (isLoading) "Распознавание..." else "📸 Загрузить скриншот СМС")
+                }
+
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     TxType.values().forEachIndexed { i, t ->
                         SegmentedButton(type == t, { type = t },
@@ -304,4 +276,30 @@ fun TxDialog(initial: Tx?, cards: List<String>, onDismiss: () -> Unit, onSave: (
             }
         }
     )
+}
+
+// Функция для конвертации картинки из галереи в Bitmap
+fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+        } else {
+            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+        }
+    } catch (e: Exception) { null }
+}
+
+// Функция-парсер: ищет в тексте сумму и слова "доход/расход"
+fun parseSmsText(text: String): Triple<Double, Boolean, String>? {
+    val lowerText = text.lowercase()
+    val amountRegex = Regex("""(\d[\d\s]*)\s*(uzs|сум|руб|\$|€)""")
+    val match = amountRegex.find(lowerText) ?: return null
+    
+    val amountStr = match.groupValues[1].replace(" ", "")
+    val amount = amountStr.toDoubleOrNull() ?: return null
+    
+    val isIncome = lowerText.contains("пополнение") || lowerText.contains("зачисление") || lowerText.contains("перевод от") || lowerText.contains("kirdi")
+    val description = text.take(30).replace("\n", " ")
+    
+    return Triple(amount, isIncome, description)
 }
