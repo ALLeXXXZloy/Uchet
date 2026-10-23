@@ -35,7 +35,10 @@ android {
 }
 
 dependencies {
-    // Для иконок:
+// ... ваши старые библиотеки ...
+    // Библиотека для распознавания текста с картинок
+    implementation("com.google.mlkit:text-recognition:16.0.0")    
+// Для иконок:
     implementation("androidx.compose.material:material-icons-extended")
     // Для ViewModel:
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")    
