@@ -9,8 +9,10 @@ jobs:
 
       - name: Unzip Project
         run: |
-          unzip -q *.zip
-          if [ -d "Uchet" ]; then mv Uchet/* . ; mv Uchet/.* . 2>/dev/null || true ; rmdir Uchet; fi
+          if ls *.zip 1> /dev/null 2>&1; then
+            unzip -q -o *.zip
+          fi
+          echo "Files in workspace:"
           ls -la
 
       - uses: actions/setup-java@v4
@@ -21,13 +23,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+      - name: Find Project Root and Build
+        run: |
+          PROJECT_DIR=$(find . -name "settings.gradle.kts" -exec dirname {} \; | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Ошибка: Файл settings.gradle.kts не найден в архиве!"
+            exit 1
+          fi
+          echo "Сборка запускается в папке: $PROJECT_DIR"
+          gradle -p "$PROJECT_DIR" assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
           name: Uchet-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: "**/app/build/outputs/apk/debug/*.apk"
