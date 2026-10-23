@@ -137,7 +137,88 @@ fun SumRow(label: String, v: Long, color: Color, bold: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, fontWeight = if (bold) FontWeight.Bold else null)
         Text("${v.money()} UZS", color = color, fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium)
+  import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+
+// Функция для конвертации картинки из галереи в Bitmap
+fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+        } else {
+            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+        }
+    } catch (e: Exception) { null }
+}
+
+// Вставьте этот код внутрь вашего главного экрана (например, в Column или Row)
+@Composable
+fun ScreenshotScannerButton(onDataExtracted: (amount: Double, isIncome: Boolean, description: String) -> Unit) {
+    val context = LocalContext.current
+    
+    // Лаунчер для выбора картинки из галереи
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val bitmap = uriToBitmap(context, it)
+            bitmap?.let { bmp ->
+                // Запускаем распознавание текста
+                val image = InputImage.fromBitmap(bmp, 0)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        val text = visionText.text
+                        // Парсим текст (ищем сумму и тип операции)
+                        val parsedData = parseSmsText(text)
+                        if (parsedData != null) {
+                            onDataExtracted(parsedData.first, parsedData.second, parsedData.third)
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        // Ошибка распознавания
+                    }
+            }
+        }
     }
+
+    Button(onClick = { imagePicker.launch("image/*") }) {
+        Text("Загрузить скриншот СМС")
+    }
+}
+
+// Функция-парсер: ищет в тексте сумму и слова "доход/расход"
+fun parseSmsText(text: String): Triple<Double, Boolean, String>? {
+    val lowerText = text.lowercase()
+    
+    // Ищем суммы (числа с пробелами или без, перед или после которых идет UZS, сум, руб)
+    val amountRegex = Regex("""(\d[\d\s]*)\s*(uzs|сум|руб|\$|€)""")
+    val match = amountRegex.find(lowerText) ?: return null
+    
+    // Убираем пробелы из найденной суммы и делаем из нее число
+    val amountStr = match.groupValues[1].replace(" ", "")
+    val amount = amountStr.toDoubleOrNull() ?: return null
+    
+    // Определяем тип операции по ключевым словам
+    val isIncome = lowerText.contains("пополнение") || lowerText.contains("зачисление") || lowerText.contains("перевод от") || lowerText.contains("kirdi")
+    
+    // Берем первые 30 символов как описание
+    val description = text.take(30).replace("\n", " ")
+    
+    return Triple(amount, isIncome, description)  }
 }
 
 @Composable
