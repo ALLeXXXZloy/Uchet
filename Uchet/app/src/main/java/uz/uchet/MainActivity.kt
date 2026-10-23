@@ -199,7 +199,6 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
             val time = Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault())
                 .format(DateTimeFormatter.ofPattern("HH:mm"))
             
-            // Выводим "Наличные" если карта не указана, или *1234
             val cardText = if (t.cardLast4.isNullOrEmpty()) "Наличные" else "*${t.cardLast4}"
             
             Text(listOfNotNull(time, cardText, if (t.type == TxType.TRANSFER) "перевод" else null)
@@ -217,8 +216,10 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
 
     var type by remember { mutableStateOf(initial?.type ?: TxType.EXPENSE) }
     var amount by remember { mutableStateOf(initial?.let { BigDecimal(it.amountMinor).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "") }
-    // Если карта null, значит это наличные
+    
     var selectedCard by remember { mutableStateOf(initial?.cardLast4 ?: "CASH") }
+    var isCustomCard by remember { mutableStateOf(initial?.cardLast4?.let { !savedCards.contains(it) } ?: false) }
+    
     var desc by remember { mutableStateOf(initial?.description ?: "") }
     var date by remember { mutableStateOf(initDt.format(DATE_FMT)) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -241,15 +242,14 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                     .addOnSuccessListener { visionText ->
                         val parsedData = parseSmsText(visionText.text)
                         if (parsedData != null) {
-                            // Ставим распознанную сумму
                             amount = parsedData.first.toBigDecimal().stripTrailingZeros().toPlainString()
                             desc = parsedData.third
                             
-                            // Если распознали карту, и она есть в нашем списке (или просто ставим её)
                             if (parsedData.second != null) {
                                 selectedCard = parsedData.second!!
-                                // Автоматически добавляем карту в список, если её там нет
-                                // (это произойдет при сохранении, либо можно добавить в VM, но здесь просто выберем)
+                                if (!savedCards.contains(selectedCard)) {
+                                    isCustomCard = true
+                                }
                             }
                         } else {
                             error = "Не удалось найти сумму в тексте"
@@ -270,7 +270,6 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 
-                // 1. Сначала выбор типа операции
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     TxType.values().forEachIndexed { i, t ->
                         SegmentedButton(type == t, { type = t },
@@ -278,7 +277,6 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                     }
                 }
 
-                // 2. Кнопка сканирования
                 Button(
                     onClick = { imagePicker.launch("image/*") },
                     modifier = Modifier.fillMaxWidth(),
@@ -287,31 +285,44 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                     Text(if (isLoading) "Распознавание..." else "📸 Загрузить скриншот СМС")
                 }
 
-                // 3. Сумма
                 OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, UZS") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
 
-                // 4. Выбор карты (Наличные + сохраненные карты)
                 Text("Способ оплаты:", style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = selectedCard == "CASH",
-                        onClick = { selectedCard = "CASH" },
+                        selected = selectedCard == "CASH" && !isCustomCard,
+                        onClick = { selectedCard = "CASH"; isCustomCard = false },
                         label = { Text("Наличные") }
                     )
                     savedCards.forEach { c ->
                         FilterChip(
-                            selected = selectedCard == c,
-                            onClick = { selectedCard = c },
+                            selected = selectedCard == c && !isCustomCard,
+                            onClick = { selectedCard = c; isCustomCard = false },
                             label = { Text("*$c") }
                         )
                     }
+                    // Кнопка для ввода своей карты
+                    FilterChip(
+                        selected = isCustomCard,
+                        onClick = { isCustomCard = true; selectedCard = "" },
+                        label = { Text("Другая...") }
+                    )
+                }
+                
+                // Если выбрана "Другая", показываем поле ввода
+                if (isCustomCard) {
+                    OutlinedTextField(
+                        value = selectedCard,
+                        onValueChange = { selectedCard = it.filter(Char::isDigit).take(4) },
+                        label = { Text("Последние 4 цифры карты") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
-                // 5. Описание
                 OutlinedTextField(desc, { desc = it }, label = { Text("Описание") })
-                
-                // 6. Дата
                 OutlinedTextField(date, { date = it }, label = { Text("Дата (дд.мм.гггг)") }, singleLine = true)
                 error?.let { Text(it, color = RED) }
             }
@@ -325,6 +336,7 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                 when {
                     minor == null || minor <= 0 -> error = "Введите сумму больше нуля"
                     d == null -> error = "Дата: дд.мм.гггг"
+                    isCustomCard && selectedCard.length != 4 -> error = "Нужны ровно 4 цифры карты"
                     else -> {
                         val finalCard = if (selectedCard == "CASH") null else selectedCard
                         onSave(Tx(
@@ -405,19 +417,15 @@ fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
 fun parseSmsText(text: String): Triple<Double, String?, String>? {
     val lowerText = text.lowercase()
     
-    // 1. Ищем сумму (число, после которого идет UZS, сум, руб и т.д.)
-    // Поддерживает пробелы и запятые (например, 50 000.00 UZS или 50000,50 сум)
     val amountRegex = Regex("""([\d\s]+(?:[.,]\d{1,2})?)\s*(?:uzs|сум|rub|руб|\$|€)""", RegexOption.IGNORE_CASE)
     val amountMatch = amountRegex.find(text)
     val amountStr = amountMatch?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".") ?: ""
     val amount = amountStr.toDoubleOrNull()
 
-    // 2. Ищем карту (4 цифры после *, 'карта', 'card' или 'карты')
     val cardRegex = Regex("""(?:карта|card|\*|х)\s*(\d{4})""", RegexOption.IGNORE_CASE)
     val cardMatch = cardRegex.find(text)
     val card = cardMatch?.groupValues?.get(1)?.take(4)
 
-    // 3. Описание (первые 40 символов, чтобы не занимало весь экран)
     val description = text.take(40).replace("\n", " ").trim()
 
     return if (amount != null) Triple(amount, card, description) else null
