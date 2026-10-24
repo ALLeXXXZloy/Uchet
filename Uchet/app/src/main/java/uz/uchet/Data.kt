@@ -29,12 +29,18 @@ data class CardEntity(
     val initialBalanceMinor: Long
 )
 
+// НОВАЯ ТАБЛИЦА: Бюджеты (лимиты на категории)
+@Entity(tableName = "budgets")
+data class BudgetEntity(
+    @PrimaryKey val category: String,
+    val limitMinor: Long
+)
+
 @Dao
 interface TxDao {
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
     fun observe(start: Long, end: Long): Flow<List<Tx>>
 
-    // НОВЫЙ МЕТОД: получаем ВСЕ транзакции для правильного расчета баланса
     @Query("SELECT * FROM txs")
     fun observeAll(): Flow<List<Tx>>
 
@@ -44,9 +50,6 @@ interface TxDao {
     @Delete
     suspend fun delete(tx: Tx)
 
-    @Query("SELECT * FROM txs")
-    suspend fun getAll(): List<Tx>
-
     @Query("SELECT * FROM cards")
     fun observeCards(): Flow<List<CardEntity>>
 
@@ -55,9 +58,20 @@ interface TxDao {
 
     @Query("DELETE FROM cards WHERE last4 = :last4")
     suspend fun deleteCard(last4: String)
+
+    // Методы для бюджетов
+    @Query("SELECT * FROM budgets")
+    fun observeBudgets(): Flow<List<BudgetEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBudget(budget: BudgetEntity)
+
+    @Query("DELETE FROM budgets WHERE category = :category")
+    suspend fun deleteBudget(category: String)
 }
 
-@Database(entities = [Tx::class, CardEntity::class], version = 3, exportSchema = false)
+// ОБНОВЛЕНА ВЕРСИЯ ДО 4
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class], version = 4, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
 
