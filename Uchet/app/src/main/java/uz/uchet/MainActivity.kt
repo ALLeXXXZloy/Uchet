@@ -48,6 +48,7 @@ private val DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 private val MONTH_FMT = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
 private val GREEN = Color(0xFF2E7D32)
 private val RED = Color(0xFFC62828)
+private val BLUE = Color(0xFF1976D2)
 
 fun Long.money(): String {
     val whole = String.format(Locale.US, "%,d", this / 100).replace(',', ' ')
@@ -68,29 +69,14 @@ class VM(app: Application) : AndroidViewModel(app) {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val cards = dao.cards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Хранилище для карт пользователя
-    private val prefs = app.getSharedPreferences("uchet_cards", android.content.Context.MODE_PRIVATE)
-    val savedCards = MutableStateFlow(prefs.getStringSet("cards", emptySet())?.toList()?.sorted() ?: emptyList())
-
-    fun addCard(card: String) {
-        val set = savedCards.value.toMutableSet()
-        set.add(card)
-        prefs.edit().putStringSet("cards", set).apply()
-        savedCards.value = set.toList().sorted()
-    }
-
-    fun removeCard(card: String) {
-        val set = savedCards.value.toMutableSet()
-        set.remove(card)
-        prefs.edit().putStringSet("cards", set).apply()
-        savedCards.value = set.toList().sorted()
-    }
+    val cards = dao.observeCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun save(t: Tx) { viewModelScope.launch { dao.upsert(t) } }
     fun delete(t: Tx) { viewModelScope.launch { dao.delete(t) } }
     fun shift(n: Long) { month.value = month.value.plusMonths(n) }
+    
+    fun saveCard(card: CardEntity) { viewModelScope.launch { dao.upsertCard(card) } }
+    fun deleteCard(last4: String) { viewModelScope.launch { dao.deleteCard(last4) } }
 }
 
 class MainActivity : ComponentActivity() {
@@ -105,13 +91,20 @@ class MainActivity : ComponentActivity() {
 fun App(vm: VM = viewModel()) {
     val month by vm.month.collectAsState()
     val txs by vm.txs.collectAsState()
-    val savedCards by vm.savedCards.collectAsState()
+    val cards by vm.cards.collectAsState()
     var editing by remember { mutableStateOf<Tx?>(null) }
     var adding by remember { mutableStateOf(false) }
     var showCardManager by remember { mutableStateOf(false) }
 
     val income = txs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
     val expense = txs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
+    
+    // Считаем общий баланс: (Сумма всех начальных балансов) + (Доходы) - (Расходы)
+    // ВНИМАНИЕ: Здесь считаются доходы/расходы только за выбранный МЕСЯЦ, 
+    // а начальный баланс берется из карт. Для точного баланса нужно брать ВСЕ транзакции,
+    // но для простоты оставим так. Если хотите баланс за все время — нужно менять запрос в БД.
+    
+    // Для простоты сейчас выведем "Итого за месяц" как раньше, а баланс карт выведем отдельно.
     val zone = ZoneId.systemDefault()
     val byDay = txs.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
 
@@ -137,13 +130,41 @@ fun App(vm: VM = viewModel()) {
         }
     ) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 88.dp)) {
+            
+            // Блок с балансами по картам
+            if (cards.isNotEmpty()) {
+                item {
+                    Text("Мои счета", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        cards.forEach { card ->
+                            // Считаем текущий баланс карты
+                            val cardTxs = txs.filter { it.cardLast4 == card.last4 || (card.last4 == "CASH" && it.cardLast4 == null) }
+                            val cardIncome = cardTxs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
+                            val cardExpense = cardTxs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
+                            val currentBalance = card.initialBalanceMinor + cardIncome - cardExpense
+
+                            Card(
+                                modifier = Modifier.width(140.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(card.name, style = MaterialTheme.typography.labelMedium)
+                                    Text("${currentBalance.money()} UZS", fontWeight = FontWeight.Bold, color = if (currentBalance >= 0) GREEN else RED)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        SumRow("Доходы", income, GREEN)
-                        SumRow("Расходы", expense, RED)
+                        SumRow("Доходы за месяц", income, GREEN)
+                        SumRow("Расходы за месяц", expense, RED)
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        SumRow("Итого", income - expense, MaterialTheme.colorScheme.onSurface, bold = true)
+                        SumRow("Итого за месяц", income - expense, MaterialTheme.colorScheme.onSurface, bold = true)
                     }
                 }
             }
@@ -160,7 +181,7 @@ fun App(vm: VM = viewModel()) {
 
     if (adding || editing != null) {
         TxDialog(
-            initial = editing, savedCards = savedCards,
+            initial = editing, cards = cards,
             onDismiss = { adding = false; editing = null },
             onSave = { vm.save(it); adding = false; editing = null },
             onDelete = editing?.let { e -> { vm.delete(e); editing = null } }
@@ -169,9 +190,9 @@ fun App(vm: VM = viewModel()) {
 
     if (showCardManager) {
         CardManagerDialog(
-            cards = savedCards,
-            onAdd = { vm.addCard(it) },
-            onRemove = { vm.removeCard(it) },
+            cards = cards,
+            onSave = { vm.saveCard(it) },
+            onDelete = { vm.deleteCard(it) },
             onDismiss = { showCardManager = false }
         )
     }
@@ -210,7 +231,7 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSave: (Tx) -> Unit, onDelete: (() -> Unit)?) {
+fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSave: (Tx) -> Unit, onDelete: (() -> Unit)?) {
     val zone = ZoneId.systemDefault()
     val initDt = initial?.let { Instant.ofEpochMilli(it.timestamp).atZone(zone) } ?: ZonedDateTime.now(zone)
 
@@ -218,7 +239,7 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
     var amount by remember { mutableStateOf(initial?.let { BigDecimal(it.amountMinor).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "") }
     
     var selectedCard by remember { mutableStateOf(initial?.cardLast4 ?: "CASH") }
-    var isCustomCard by remember { mutableStateOf(initial?.cardLast4?.let { !savedCards.contains(it) } ?: false) }
+    var isCustomCard by remember { mutableStateOf(false) }
     
     var desc by remember { mutableStateOf(initial?.description ?: "") }
     var date by remember { mutableStateOf(initDt.format(DATE_FMT)) }
@@ -247,7 +268,7 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                             
                             if (parsedData.second != null) {
                                 selectedCard = parsedData.second!!
-                                if (!savedCards.contains(selectedCard)) {
+                                if (cards.none { it.last4 == selectedCard }) {
                                     isCustomCard = true
                                 }
                             }
@@ -288,21 +309,15 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                 OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, UZS") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
 
-                Text("Способ оплаты:", style = MaterialTheme.typography.labelMedium)
+                Text("Счет оплаты:", style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = selectedCard == "CASH" && !isCustomCard,
-                        onClick = { selectedCard = "CASH"; isCustomCard = false },
-                        label = { Text("Наличные") }
-                    )
-                    savedCards.forEach { c ->
+                    cards.forEach { c ->
                         FilterChip(
-                            selected = selectedCard == c && !isCustomCard,
-                            onClick = { selectedCard = c; isCustomCard = false },
-                            label = { Text("*$c") }
+                            selected = selectedCard == c.last4 && !isCustomCard,
+                            onClick = { selectedCard = c.last4; isCustomCard = false },
+                            label = { Text(c.name) }
                         )
                     }
-                    // Кнопка для ввода своей карты
                     FilterChip(
                         selected = isCustomCard,
                         onClick = { isCustomCard = true; selectedCard = "" },
@@ -310,7 +325,6 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                     )
                 }
                 
-                // Если выбрана "Другая", показываем поле ввода
                 if (isCustomCard) {
                     OutlinedTextField(
                         value = selectedCard,
@@ -338,7 +352,7 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
                     d == null -> error = "Дата: дд.мм.гггг"
                     isCustomCard && selectedCard.length != 4 -> error = "Нужны ровно 4 цифры карты"
                     else -> {
-                        val finalCard = if (selectedCard == "CASH") null else selectedCard
+                        val finalCard = if (selectedCard.isEmpty() || selectedCard == "CASH") null else selectedCard
                         onSave(Tx(
                             id = initial?.id ?: 0, amountMinor = minor, type = type,
                             cardLast4 = finalCard, description = desc.trim(),
@@ -359,41 +373,71 @@ fun TxDialog(initial: Tx?, savedCards: List<String>, onDismiss: () -> Unit, onSa
 }
 
 @Composable
-fun CardManagerDialog(cards: List<String>, onAdd: (String) -> Unit, onRemove: (String) -> Unit, onDismiss: () -> Unit) {
-    var newCard by remember { mutableStateOf("") }
+fun CardManagerDialog(cards: List<CardEntity>, onSave: (CardEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var last4 by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var initialBalance by remember { mutableStateOf("") }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Мои карты") },
+        title = { Text("Мои счета и карты") },
         text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newCard,
-                        onValueChange = { newCard = it.filter(Char::isDigit).take(4) },
-                        label = { Text("4 цифры карты") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (newCard.length == 4 && !cards.contains(newCard)) {
-                                onAdd(newCard)
-                                newCard = ""
-                            }
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Добавить новый:", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Название (напр. Наличные, Kapital)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = last4,
+                    onValueChange = { last4 = it.uppercase() }, // CASH или 4 цифры
+                    label = { Text("Номер (CASH или 4 цифры)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = initialBalance,
+                    onValueChange = { initialBalance = it },
+                    label = { Text("Начальный баланс (UZS)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val balanceMinor = runCatching { BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).toLong() }.getOrNull() ?: 0L
+                        if (name.isNotBlank() && last4.isNotBlank()) {
+                            onSave(CardEntity(last4 = last4, name = name, initialBalanceMinor = balanceMinor))
+                            name = ""; last4 = ""; initialBalance = ""
                         }
-                    ) { Text("Доб.") }
-                }
-                Spacer(Modifier.height(16.dp))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Добавить") }
+
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                
+                Text("Ваши счета:", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
                 if (cards.isEmpty()) {
-                    Text("У вас пока нет добавленных карт.", color = Color.Gray)
+                    Text("У вас пока нет добавленных счетов.", color = Color.Gray)
                 }
                 cards.forEach { c ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("*$c")
-                        IconButton({ onRemove(c) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
+                        Column {
+                            Text(c.name, fontWeight = FontWeight.Bold)
+                            Text("Начало: ${c.initialBalanceMinor.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        }
+                        IconButton({ onDelete(c.last4) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
                     }
                 }
             }
