@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,7 +34,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -405,6 +410,21 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
                 }
                 Spacer(Modifier.height(16.dp))
             }
+            
+            // ГРАФИК ТРАТ ПО ДНЯМ
+            item {
+                if (txs.any { it.type == TxType.EXPENSE }) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Динамика расходов (по дням)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(16.dp))
+                            DailyExpenseChart(txs = txs, yearMonth = month)
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+            
             item {
                 val expensesByCategory = txs.filter { it.type == TxType.EXPENSE }.groupBy { it.category }.mapValues { (_, list) -> list.sumOf { it.amountMinor } }
                 if (expensesByCategory.isNotEmpty()) {
@@ -450,7 +470,53 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // <--- ДОБАВЛЕНО ЗДЕСЬ
+// КАСТОМНЫЙ ГРАФИК РАСХОДОВ ПО ДНЯМ (Столбчатая диаграмма)
+@Composable
+fun DailyExpenseChart(txs: List<Tx>, yearMonth: YearMonth) {
+    val daysInMonth = yearMonth.lengthOfMonth()
+    val zone = ZoneId.systemDefault()
+    
+    // Группируем траты по дням месяца
+    val dailyExpenses = (1..daysInMonth).associateWith { day ->
+        txs.filter { 
+            val date = Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate()
+            date.dayOfMonth == day && it.type == TxType.EXPENSE 
+        }.sumOf { it.amountMinor }
+    }
+    
+    val maxExpense = (dailyExpenses.values.maxOrNull() ?: 1L).toFloat()
+    val barColor = MaterialTheme.colorScheme.primary
+
+    Column {
+        Canvas(modifier = Modifier.fillMaxWidth().height(100.dp)) {
+            val width = size.width
+            val height = size.height
+            val barWidth = (width / daysInMonth) * 0.6f
+            val step = width / daysInMonth
+            
+            dailyExpenses.forEach { (day, amount) ->
+                if (amount > 0) {
+                    val barHeight = (amount / maxExpense) * height
+                    val x = (day - 1) * step + (step - barWidth) / 2
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = Offset(x, height - barHeight),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("1", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("15", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("$daysInMonth", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryManagerDialog(categories: List<CategoryEntity>, onSave: (CategoryEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
     var isIncome by remember { mutableStateOf(false) }
