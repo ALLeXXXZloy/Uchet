@@ -11,12 +11,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,10 +41,11 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay // ДОБАВЛЕН ИМПОРТ ДЛЯ ПАУЗЫ
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
-import java.math.RoundingMode // ДОБАВЛЕН ИМПОРТ ДЛЯ ОКРУГЛЕНИЯ
+import java.math.RoundingMode
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -53,7 +58,6 @@ private val RED = Color(0xFFC62828)
 val EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
 
-// ОБНОВЛЕННАЯ ФУНКЦИЯ: теперь всегда показывает тийины (2 знака после запятой)
 fun Long.money(): String {
     val abs = kotlin.math.abs(this)
     val whole = String.format(Locale.US, "%,d", abs / 100).replace(',', ' ')
@@ -89,7 +93,14 @@ class VM(app: Application) : AndroidViewModel(app) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { Surface { App() } } }
+        setContent { 
+            val darkTheme = isSystemInDarkTheme()
+            val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
+            
+            MaterialTheme(colorScheme = colorScheme) { 
+                Surface { App() } 
+            } 
+        }
     }
 }
 
@@ -100,14 +111,25 @@ fun App(vm: VM = viewModel()) {
     val txs by vm.txs.collectAsState()
     val allTxs by vm.allTxs.collectAsState()
     val cards by vm.cards.collectAsState()
+    
     var editing by remember { mutableStateOf<Tx?>(null) }
     var adding by remember { mutableStateOf(false) }
     var showCardManager by remember { mutableStateOf(false) }
 
+    var searchQuery by remember { mutableStateOf("") }
+    var filterType by remember { mutableStateOf<TxType?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
     val income = txs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
     val expense = txs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
     val zone = ZoneId.systemDefault()
-    val byDay = txs.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
+    
+    val filteredTxs = txs.filter { t ->
+        (searchQuery.isEmpty() || t.description.contains(searchQuery, true) || t.category.contains(searchQuery, true)) &&
+        (filterType == null || t.type == filterType)
+    }
+    val byDay = filteredTxs.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
 
     val cardBalances = cards.associate { card ->
         val cardTxs = allTxs.filter { it.cardLast4 == card.last4 || (card.last4 == "CASH" && it.cardLast4 == null) }
@@ -117,6 +139,7 @@ fun App(vm: VM = viewModel()) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -139,6 +162,24 @@ fun App(vm: VM = viewModel()) {
     ) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 88.dp)) {
             
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Поиск по операциям...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = filterType == null, onClick = { filterType = null }, label = { Text("Все") })
+                    FilterChip(selected = filterType == TxType.INCOME, onClick = { filterType = TxType.INCOME }, label = { Text("Доходы") })
+                    FilterChip(selected = filterType == TxType.EXPENSE, onClick = { filterType = TxType.EXPENSE }, label = { Text("Расходы") })
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
             if (cards.isNotEmpty()) {
                 item {
                     Text("Мои счета", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
@@ -161,6 +202,23 @@ fun App(vm: VM = viewModel()) {
             }
 
             item {
+                val expensesByCategory = txs.filter { it.type == TxType.EXPENSE }
+                    .groupBy { it.category }
+                    .mapValues { (_, list) -> list.sumOf { it.amountMinor } }
+                
+                if (expensesByCategory.isNotEmpty()) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Расходы по категориям", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(16.dp))
+                            CategoryPieChart(expensesByCategory)
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
+            item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         SumRow("Доходы за месяц", income, GREEN)
@@ -170,13 +228,17 @@ fun App(vm: VM = viewModel()) {
                     }
                 }
             }
-            if (txs.isEmpty()) item {
-                Text("Операций нет. Нажмите «+».", Modifier.padding(top = 32.dp), color = Color.Gray)
+            
+            if (filteredTxs.isEmpty()) item {
+                Text("Ничего не найдено.", Modifier.padding(top = 32.dp), color = Color.Gray)
             }
+            
             byDay.forEach { (day, list) ->
                 item { Text(day.format(DATE_FMT), Modifier.padding(top = 16.dp, bottom = 4.dp),
                     style = MaterialTheme.typography.labelLarge, color = Color.Gray) }
-                items(list, key = { it.id }) { t -> TxRow(t) { editing = t } }
+                items(list, key = { it.id }) { t -> 
+                    TxRow(t) { editing = t } 
+                }
             }
         }
     }
@@ -186,7 +248,25 @@ fun App(vm: VM = viewModel()) {
             initial = editing, cards = cards,
             onDismiss = { adding = false; editing = null },
             onSave = { vm.save(it); adding = false; editing = null },
-            onDelete = editing?.let { e -> { vm.delete(e); editing = null } }
+            onDelete = editing?.let { e -> { 
+                vm.delete(e); editing = null 
+                scope.launch { 
+                    // ТАЙМЕР НА 5 СЕКУНД
+                    val timerJob = launch {
+                        delay(5000)
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                    }
+                    
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Операция удалена",
+                        actionLabel = "Отменить",
+                        duration = SnackbarDuration.Indefinite // Висит, пока таймер не закроет
+                    )
+                    
+                    timerJob.cancel() // Если юзер нажал кнопку раньше, отменяем таймер
+                    if (result == SnackbarResult.ActionPerformed) vm.save(e)
+                }
+            } }
         )
     }
 
@@ -199,6 +279,44 @@ fun App(vm: VM = viewModel()) {
             onDelete = { vm.deleteCard(it) },
             onDismiss = { showCardManager = false }
         )
+    }
+}
+
+@Composable
+fun CategoryPieChart(data: Map<String, Long>) {
+    val total = data.values.sum().toFloat()
+    if (total == 0f) return
+    
+    val colors = listOf(
+        Color(0xFFE57373), Color(0xFF81C784), Color(0xFF64B5F6), 
+        Color(0xFFFFB74D), Color(0xFFBA68C8), Color(0xFF4DB6AC), Color(0xFFA1887F)
+    )
+    val sortedData = data.entries.sortedByDescending { it.value }
+
+    Row(Modifier.fillMaxWidth().height(120.dp), verticalAlignment = Alignment.CenterVertically) {
+        Canvas(modifier = Modifier.size(110.dp).padding(8.dp)) {
+            var startAngle = -90f
+            sortedData.forEachIndexed { index, entry ->
+                val sweepAngle = (entry.value / total) * 360f
+                drawArc(
+                    color = colors[index % colors.size],
+                    startAngle = startAngle,
+                    sweepAngle = sweepAngle,
+                    useCenter = true
+                )
+                startAngle += sweepAngle
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            sortedData.take(4).forEachIndexed { index, entry ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).background(colors[index % colors.size], shape = CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text("${entry.key}: ${(entry.value / total * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 
@@ -267,7 +385,6 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
                     .addOnSuccessListener { visionText ->
                         val parsedData = parseSmsText(visionText.text)
                         if (parsedData != null) {
-                            // Берем строку, чтобы избежать потери точности
                             amount = parsedData.amountStr 
                             desc = parsedData.description
                             category = parsedData.category
@@ -336,7 +453,6 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
         },
         confirmButton = {
             TextButton({
-                // ОКРУГЛЕНИЕ ДО ТИЙИНОВ (HALF_UP)
                 val minor = runCatching { 
                     BigDecimal(amount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
                 }.getOrNull()
@@ -407,7 +523,6 @@ fun CardManagerDialog(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    // ОКРУГЛЕНИЕ БАЛАНСА ДО ТИЙИНОВ
                     val actualMinor = runCatching { 
                         BigDecimal(actualBalanceInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
                     }.getOrNull()
@@ -440,7 +555,6 @@ fun CardManagerDialog(
                     Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = {
-                            // ОКРУГЛЕНИЕ НАЧАЛЬНОГО БАЛАНСА ДО ТИЙИНОВ
                             val balanceMinor = runCatching { 
                                 BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
                             }.getOrNull() ?: 0L
@@ -495,7 +609,6 @@ fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
     } catch (e: Exception) { null }
 }
 
-// Изменена структура: теперь сумма хранится как строка (чтобы не терять точность)
 data class ParsedSms(val amountStr: String, val card: String?, val description: String, val category: String)
 
 fun parseSmsText(text: String): ParsedSms? {
@@ -503,10 +616,7 @@ fun parseSmsText(text: String): ParsedSms? {
     val amountRegex = Regex("""([\d\s]+(?:[.,]\d{1,2})?)\s*(?:uzs|сум|rub|руб|\$|€)""", RegexOption.IGNORE_CASE)
     val amountMatch = amountRegex.find(text)
     
-    // Получаем строку с суммой (убираем пробелы, заменяем запятую на точку)
     val amountStr = amountMatch?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".") ?: return null
-    
-    // Проверяем, что это действительно число
     if (amountStr.toBigDecimalOrNull() == null) return null
 
     val cardRegex = Regex("""(?:карта|card|\*|х)\s*(\d{4})""", RegexOption.IGNORE_CASE)
