@@ -6,8 +6,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
-import java.math.BigDecimal
-import java.math.RoundingMode
 import java.util.Locale
 
 class BalanceWidget : AppWidgetProvider() {
@@ -23,22 +21,18 @@ class BalanceWidget : AppWidgetProvider() {
 
     companion object {
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
-            // Читаем сохраненный баланс из памяти
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             val totalBalanceMinor = prefs.getLong("total_balance", 0L)
 
-            // Форматируем сумму
             val abs = kotlin.math.abs(totalBalanceMinor)
             val whole = String.format(Locale.US, "%,d", abs / 100).replace(',', ' ')
             val frac = abs % 100
             val sign = if (totalBalanceMinor < 0) "-" else ""
             val balanceText = "$sign$whole.%02d UZS".format(frac)
 
-            // Обновляем текст
             val views = RemoteViews(context.packageName, R.layout.widget_layout)
             views.setTextViewText(R.id.widget_balance_text, balanceText)
 
-            // Добавляем клик для открытия приложения
             val intent = Intent(context, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(
                 context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
