@@ -96,8 +96,6 @@ class VM(app: Application) : AndroidViewModel(app) {
     val cards = dao.observeCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val budgets = dao.observeBudgets().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recurring = dao.observeRecurring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    
-    // ИСПОЛЬЗУЕМ stateIn ДЛЯ КАТЕГОРИЙ
     val categories = dao.observeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList<CategoryEntity>())
 
     init {
@@ -240,7 +238,6 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     val budgets by vm.budgets.collectAsState()
     val recurring by vm.recurring.collectAsState()
     
-    // ИСПОЛЬЗУЕМ collectAsState ДЛЯ КАТЕГОРИЙ, ЧТОБЫ ПОЛУЧИТЬ List
     val categories by vm.categories.collectAsState()
     val expenseCategories = categories.filter { it.type == TxType.EXPENSE }.map { it.name }
     val incomeCategories = categories.filter { it.type == TxType.INCOME }.map { it.name }
@@ -453,6 +450,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
 }
 
+@OptIn(ExperimentalMaterial3Api::class) // <--- ДОБАВЛЕНО ЗДЕСЬ
 @Composable
 fun CategoryManagerDialog(categories: List<CategoryEntity>, onSave: (CategoryEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
     var isIncome by remember { mutableStateOf(false) }
