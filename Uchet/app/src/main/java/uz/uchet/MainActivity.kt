@@ -86,7 +86,7 @@ class VM(app: Application) : AndroidViewModel(app) {
     val recurring = dao.observeRecurring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        // При запуске приложения проверяем и выполняем регулярные платежи
+        // Проверка регулярных платежей при запуске
         viewModelScope.launch {
             checkAndExecuteRecurring()
         }
@@ -94,12 +94,11 @@ class VM(app: Application) : AndroidViewModel(app) {
 
     private suspend fun checkAndExecuteRecurring() {
         val now = LocalDate.now()
-        val currentMonthStr = YearMonth.now().toString() // Например "2024-05"
+        val currentMonthStr = YearMonth.now().toString()
         val currentDay = now.dayOfMonth
 
         val templates = dao.getRecurringList()
         for (t in templates) {
-            // Если день наступил и в этом месяце еще не выполнялось
             if (t.dayOfMonth <= currentDay && t.lastExecutedMonth != currentMonthStr) {
                 val tx = Tx(
                     amountMinor = t.amountMinor,
@@ -197,6 +196,21 @@ fun App(vm: VM = viewModel()) {
         val cardIncome = cardTxs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
         val cardExpense = cardTxs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
         card.last4 to (card.initialBalanceMinor + cardIncome - cardExpense)
+    }
+
+    // ОБНОВЛЕНИЕ ВИДЖЕТА
+    LaunchedEffect(cardBalances) {
+        val total = cardBalances.values.sum()
+        val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putLong("total_balance", total).apply()
+        
+        val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+        val componentName = android.content.ComponentName(context, BalanceWidget::class.java)
+        val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+        
+        appWidgetIds.forEach { id ->
+            BalanceWidget.updateWidget(context, appWidgetManager, id)
+        }
     }
 
     Scaffold(
@@ -404,7 +418,6 @@ fun App(vm: VM = viewModel()) {
     }
 }
 
-// ГЕНЕРАЦИЯ CSV
 fun generateCsv(transactions: List<Tx>): String {
     val sb = StringBuilder()
     sb.append("Дата,Время,Тип,Сумма (UZS),Категория,Описание,Карта,Источник\n")
@@ -474,7 +487,6 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            // Добавляем иконку автоматической транзакции
             val autoIcon = if (t.source == "AUTO") "🔄 " else ""
             Text("$autoIcon${t.category}  ${t.description}".trim(), maxLines = 2)
             val time = Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -596,7 +608,6 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
     )
 }
 
-// ДИАЛОГ РЕГУЛЯРНЫХ ПЛАТЕЖЕЙ
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecurringManagerDialog(
@@ -687,7 +698,6 @@ fun RecurringManagerDialog(
     )
 }
 
-// ОСТАЛЬНЫЕ ДИАЛОГИ (Бюджеты, Карты) - БЕЗ ИЗМЕНЕНИЙ
 @Composable
 fun BudgetManagerDialog(
     budgets: List<BudgetEntity>,
