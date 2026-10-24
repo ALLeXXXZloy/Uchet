@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner // ИСПРАВЛЕННЫЙ ИМПОРТ
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -44,7 +45,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.common.InputImage
@@ -68,8 +68,8 @@ private val GREEN = Color(0xFF2E7D32)
 private val RED = Color(0xFFC62828)
 private val YELLOW = Color(0xFFF9A825)
 
-val EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
-val INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
+val DEFAULT_EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
+val DEFAULT_INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
 
 fun Long.money(): String {
     val abs = kotlin.math.abs(this)
@@ -96,9 +96,20 @@ class VM(app: Application) : AndroidViewModel(app) {
     val cards = dao.observeCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val budgets = dao.observeBudgets().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recurring = dao.observeRecurring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val categories = dao.observeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        viewModelScope.launch { checkAndExecuteRecurring() }
+        viewModelScope.launch {
+            checkAndExecuteRecurring()
+            seedDefaultCategories()
+        }
+    }
+
+    private suspend fun seedDefaultCategories() {
+        if (dao.getCategoriesList().isEmpty()) {
+            DEFAULT_EXPENSE_CATEGORIES.forEach { dao.upsertCategory(CategoryEntity(it, TxType.EXPENSE)) }
+            DEFAULT_INCOME_CATEGORIES.forEach { dao.upsertCategory(CategoryEntity(it, TxType.INCOME)) }
+        }
     }
 
     private suspend fun checkAndExecuteRecurring() {
@@ -124,16 +135,20 @@ class VM(app: Application) : AndroidViewModel(app) {
     fun deleteBudget(category: String) { viewModelScope.launch { dao.deleteBudget(category) } }
     fun saveRecurring(r: RecurringEntity) { viewModelScope.launch { dao.upsertRecurring(r) } }
     fun deleteRecurring(r: RecurringEntity) { viewModelScope.launch { dao.deleteRecurring(r) } }
+    
+    fun saveCategory(c: CategoryEntity) { viewModelScope.launch { dao.upsertCategory(c) } }
+    fun deleteCategory(name: String) { viewModelScope.launch { dao.deleteCategory(name) } }
 
     fun createBackup(onResult: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val allTx = allTxs.first(); val allCards = cards.first(); val allBudgets = budgets.first(); val allRecurring = dao.getRecurringList()
+                val allTx = allTxs.first(); val allCards = cards.first(); val allBudgets = budgets.first(); val allRecurring = dao.getRecurringList(); val allCats = dao.getCategoriesList()
                 val root = JSONObject()
                 val txsArray = JSONArray(); allTx.forEach { t -> txsArray.put(JSONObject().apply { put("id", t.id); put("amountMinor", t.amountMinor); put("type", t.type.name); put("cardLast4", t.cardLast4 ?: JSONObject.NULL); put("description", t.description); put("category", t.category); put("timestamp", t.timestamp); put("source", t.source) }) }; root.put("txs", txsArray)
                 val cardsArray = JSONArray(); allCards.forEach { c -> cardsArray.put(JSONObject().apply { put("last4", c.last4); put("name", c.name); put("initialBalanceMinor", c.initialBalanceMinor) }) }; root.put("cards", cardsArray)
                 val budgetsArray = JSONArray(); allBudgets.forEach { b -> budgetsArray.put(JSONObject().apply { put("category", b.category); put("limitMinor", b.limitMinor) }) }; root.put("budgets", budgetsArray)
                 val recurringArray = JSONArray(); allRecurring.forEach { r -> recurringArray.put(JSONObject().apply { put("id", r.id); put("amountMinor", r.amountMinor); put("type", r.type.name); put("cardLast4", r.cardLast4 ?: JSONObject.NULL); put("description", r.description); put("category", r.category); put("dayOfMonth", r.dayOfMonth); put("lastExecutedMonth", r.lastExecutedMonth) }) }; root.put("recurring", recurringArray)
+                val catsArray = JSONArray(); allCats.forEach { c -> catsArray.put(JSONObject().apply { put("name", c.name); put("type", c.type.name) }) }; root.put("categories", catsArray)
                 onResult(root.toString(2))
             } catch (e: Exception) { onResult("") }
         }
@@ -144,10 +159,13 @@ class VM(app: Application) : AndroidViewModel(app) {
             try {
                 val root = JSONObject(jsonString)
                 dao.clearTxs(); dao.clearCards(); dao.clearBudgets(); dao.clearRecurring()
+                
                 val txsArray = root.optJSONArray("txs"); if (txsArray != null) { for (i in 0 until txsArray.length()) { val o = txsArray.getJSONObject(i); dao.upsert(Tx(id = o.optLong("id"), amountMinor = o.getLong("amountMinor"), type = TxType.valueOf(o.getString("type")), cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"), description = o.optString("description"), category = o.optString("category"), timestamp = o.getLong("timestamp"), source = o.optString("source"))) } }
                 val cardsArray = root.optJSONArray("cards"); if (cardsArray != null) { for (i in 0 until cardsArray.length()) { val o = cardsArray.getJSONObject(i); dao.upsertCard(CardEntity(last4 = o.getString("last4"), name = o.getString("name"), initialBalanceMinor = o.getLong("initialBalanceMinor"))) } }
                 val budgetsArray = root.optJSONArray("budgets"); if (budgetsArray != null) { for (i in 0 until budgetsArray.length()) { val o = budgetsArray.getJSONObject(i); dao.upsertBudget(BudgetEntity(category = o.getString("category"), limitMinor = o.getLong("limitMinor"))) } }
                 val recurringArray = root.optJSONArray("recurring"); if (recurringArray != null) { for (i in 0 until recurringArray.length()) { val o = recurringArray.getJSONObject(i); dao.upsertRecurring(RecurringEntity(id = o.optLong("id"), amountMinor = o.getLong("amountMinor"), type = TxType.valueOf(o.getString("type")), cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"), description = o.optString("description"), category = o.optString("category"), dayOfMonth = o.getInt("dayOfMonth"), lastExecutedMonth = o.optString("lastExecutedMonth"))) } }
+                val catsArray = root.optJSONArray("categories"); if (catsArray != null) { for (i in 0 until catsArray.length()) { val o = catsArray.getJSONObject(i); dao.upsertCategory(CategoryEntity(name = o.getString("name"), type = TxType.valueOf(o.getString("type")))) } }
+                
                 onResult(true)
             } catch (e: Exception) { e.printStackTrace(); onResult(false) }
         }
@@ -219,13 +237,18 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     val cards by vm.cards.collectAsState()
     val budgets by vm.budgets.collectAsState()
     val recurring by vm.recurring.collectAsState()
+    val categories by vm.categories.collectAsState()
     
+    val expenseCategories = categories.filter { it.type == TxType.EXPENSE }.map { it.name }
+    val incomeCategories = categories.filter { it.type == TxType.INCOME }.map { it.name }
+
     var editing by remember { mutableStateOf<Tx?>(null) }
     var adding by remember { mutableStateOf(false) }
     var isPendingSms by remember { mutableStateOf(false) }
     var showCardManager by remember { mutableStateOf(false) }
     var showBudgetManager by remember { mutableStateOf(false) }
     var showRecurringManager by remember { mutableStateOf(false) }
+    var showCategoryManager by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
@@ -308,12 +331,21 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
 
     if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope)
 
+    if (showCategoryManager) {
+        CategoryManagerDialog(categories, 
+            onSave = { vm.saveCategory(it) }, 
+            onDelete = { vm.deleteCategory(it) }, 
+            onDismiss = { showCategoryManager = false }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Row(verticalAlignment = Alignment.CenterVertically) { IconButton({ vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, "Назад") }; Text(month.format(MONTH_FMT).replaceFirstChar { it.uppercase() }); IconButton({ vm.shift(1) }) { Icon(Icons.Default.ChevronRight, "Вперед") } } },
                 actions = {
+                    IconButton(onClick = { showCategoryManager = true }) { Icon(Icons.Default.Category, "Категории") }
                     IconButton(onClick = { showRecurringManager = true }) { Icon(Icons.Default.Autorenew, "Регулярные") }
                     IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.Savings, "Бюджеты") }
                     IconButton(onClick = { showCardManager = true }) { Icon(Icons.Default.CreditCard, "Карты") }
@@ -398,16 +430,77 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     }
 
     if (adding || editing != null) {
-        TxDialog(initial = editing, cards = cards, isPendingSms = isPendingSms,
+        TxDialog(initial = editing, cards = cards, expenseCategories = expenseCategories, incomeCategories = incomeCategories, isPendingSms = isPendingSms,
             onDismiss = { if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
             onSave = { vm.save(it); if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
-            onDelete = if (isPendingSms) null else editing?.let { e -> { vm.delete(e); editing = null; scope.launch { val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }; val result = snackbarHostState.showSnackbar("Операция удалена", "Отменить", SnackbarDuration.Indefinite); timerJob.cancel(); if (result == SnackbarResult.ActionPerformed) vm.save(e) } } }
+            onDelete = if (isPendingSms) null else editing?.let { e -> { 
+                vm.delete(e); editing = null; 
+                scope.launch { 
+                    val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }
+                    // ИСПРАВЛЕННЫЙ ВЫЗОВ SNACKBAR
+                    val result = snackbarHostState.showSnackbar(message = "Операция удалена", actionLabel = "Отменить", duration = SnackbarDuration.Indefinite)
+                    timerJob.cancel(); 
+                    if (result == SnackbarResult.ActionPerformed) vm.save(e) 
+                } 
+            } }
         )
     }
 
     if (showCardManager) CardManagerDialog(cards, cardBalances, allTxs, { vm.saveCard(it) }, { vm.deleteCard(it) }, { showCardManager = false })
-    if (showBudgetManager) BudgetManagerDialog(budgets, { vm.saveBudget(it) }, { vm.deleteBudget(it) }, { showBudgetManager = false })
-    if (showRecurringManager) RecurringManagerDialog(recurring, cards, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
+    if (showBudgetManager) BudgetManagerDialog(budgets, expenseCategories, { vm.saveBudget(it) }, { vm.deleteBudget(it) }, { showBudgetManager = false })
+    if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
+}
+
+@Composable
+fun CategoryManagerDialog(categories: List<CategoryEntity>, onSave: (CategoryEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var isIncome by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Мои категории") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Добавить новую:", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(!isIncome, { isIncome = false }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Расход") }
+                    SegmentedButton(isIncome, { isIncome = true }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Доход") }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название (с эмодзи)") }, placeholder = { Text("Например: 🐶 Собака") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    if (name.isNotBlank() && !categories.any { it.name == name }) {
+                        onSave(CategoryEntity(name = name.trim(), type = if (isIncome) TxType.INCOME else TxType.EXPENSE))
+                        name = ""
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Добавить категорию") }
+
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                
+                Text("Категории расходов:", style = MaterialTheme.typography.titleSmall, color = RED)
+                categories.filter { it.type == TxType.EXPENSE }.forEach { c ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.name, style = MaterialTheme.typography.bodyLarge)
+                        IconButton({ onDelete(c.name) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                Text("Категории доходов:", style = MaterialTheme.typography.titleSmall, color = GREEN)
+                categories.filter { it.type == TxType.INCOME }.forEach { c ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.name, style = MaterialTheme.typography.bodyLarge)
+                        IconButton({ onDelete(c.name) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
 }
 
 @Composable
@@ -500,11 +593,11 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = false, onDismiss: () -> Unit, onSave: (Tx) -> Unit, onDelete: (() -> Unit)?) {
+fun TxDialog(initial: Tx?, cards: List<CardEntity>, expenseCategories: List<String>, incomeCategories: List<String>, isPendingSms: Boolean = false, onDismiss: () -> Unit, onSave: (Tx) -> Unit, onDelete: (() -> Unit)?) {
     val zone = ZoneId.systemDefault()
     val initDt = initial?.let { Instant.ofEpochMilli(it.timestamp).atZone(zone) } ?: ZonedDateTime.now(zone)
     var type by remember { mutableStateOf(initial?.type ?: TxType.EXPENSE) }
-    var category by remember { mutableStateOf(initial?.category ?: EXPENSE_CATEGORIES.last()) }
+    var category by remember { mutableStateOf(initial?.category ?: expenseCategories.lastOrNull() ?: "📦 Другое") }
     var amount by remember { mutableStateOf(initial?.let { BigDecimal(it.amountMinor).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "") }
     var selectedCard by remember { mutableStateOf(initial?.cardLast4 ?: "CASH") }
     var isCustomCard by remember { mutableStateOf(initial?.cardLast4?.let { !cards.map { c -> c.last4 }.contains(it) } ?: false) }
@@ -515,8 +608,8 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = fals
     var isLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(type) {
-        val currentList = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES
-        if (!currentList.contains(category)) category = currentList.last()
+        val currentList = if (type == TxType.INCOME) incomeCategories else expenseCategories
+        if (!currentList.contains(category)) category = currentList.lastOrNull() ?: "📦 Другое"
     }
 
     val imagePicker = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -529,7 +622,10 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = fals
                 recognizer.process(image).addOnSuccessListener { visionText ->
                     val parsedData = parseSmsText(visionText.text)
                     if (parsedData != null) {
-                        amount = parsedData.amountStr; desc = parsedData.description; category = parsedData.category
+                        amount = parsedData.amountStr; desc = parsedData.description; 
+                        val listToSearch = if (type == TxType.INCOME) incomeCategories else expenseCategories
+                        if (listToSearch.contains(parsedData.category)) category = parsedData.category
+                        
                         if (parsedData.card != null) { selectedCard = parsedData.card; if (cards.none { it.last4 == selectedCard }) isCustomCard = true }
                     } else { error = "Не удалось найти сумму в тексте" }
                     isLoading = false
@@ -555,7 +651,7 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = fals
                 OutlinedTextField(amount, { amount = it }, label = { Text("Сумма (UZS)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 Text("Категория:", style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val currentCategories = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES
+                    val currentCategories = if (type == TxType.INCOME) incomeCategories else expenseCategories
                     currentCategories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) }
                 }
                 Text("Счет оплаты:", style = MaterialTheme.typography.labelMedium)
@@ -590,20 +686,28 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = fals
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecurringManagerDialog(recurring: List<RecurringEntity>, cards: List<CardEntity>, onSave: (RecurringEntity) -> Unit, onDelete: (RecurringEntity) -> Unit, onDismiss: () -> Unit) {
-    var type by remember { mutableStateOf(TxType.EXPENSE) }; var category by remember { mutableStateOf(EXPENSE_CATEGORIES.last()) }; var amount by remember { mutableStateOf("") }; var selectedCard by remember { mutableStateOf("CASH") }; var desc by remember { mutableStateOf("") }; var dayOfMonth by remember { mutableStateOf("1") }
+fun RecurringManagerDialog(recurring: List<RecurringEntity>, cards: List<CardEntity>, expenseCategories: List<String>, incomeCategories: List<String>, onSave: (RecurringEntity) -> Unit, onDelete: (RecurringEntity) -> Unit, onDismiss: () -> Unit) {
+    var type by remember { mutableStateOf(TxType.EXPENSE) }
+    var category by remember { mutableStateOf(expenseCategories.lastOrNull() ?: "📦 Другое") }
+    var amount by remember { mutableStateOf("") }; var selectedCard by remember { mutableStateOf("CASH") }; var desc by remember { mutableStateOf("") }; var dayOfMonth by remember { mutableStateOf("1") }
+    
+    LaunchedEffect(type) {
+        val currentList = if (type == TxType.INCOME) incomeCategories else expenseCategories
+        if (!currentList.contains(category)) category = currentList.lastOrNull() ?: "📦 Другое"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Регулярные платежи") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Добавить шаблон:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { TxType.values().forEachIndexed { i, t -> SegmentedButton(type == t, { type = t; category = if (t == TxType.INCOME) INCOME_CATEGORIES.last() else EXPENSE_CATEGORIES.last() }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(t.label) } } }
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { TxType.values().forEachIndexed { i, t -> SegmentedButton(type == t, { type = t }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(t.label) } } }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Сумма (UZS)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Описание (например: Аренда)") }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = dayOfMonth, onValueChange = { dayOfMonth = it.filter(Char::isDigit).take(2) }, label = { Text("День месяца (1-31)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)); Spacer(Modifier.height(8.dp))
                 Text("Категория:", style = MaterialTheme.typography.labelMedium)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { val currentCategories = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES; currentCategories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) } }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { val currentCategories = if (type == TxType.INCOME) incomeCategories else expenseCategories; currentCategories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) } }
                 Spacer(Modifier.height(8.dp))
                 Text("Счет:", style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { cards.forEach { c -> FilterChip(selected = selectedCard == c.last4, onClick = { selectedCard = c.last4 }, label = { Text(c.name) }) } }
@@ -619,14 +723,16 @@ fun RecurringManagerDialog(recurring: List<RecurringEntity>, cards: List<CardEnt
 }
 
 @Composable
-fun BudgetManagerDialog(budgets: List<BudgetEntity>, onSave: (BudgetEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
-    var selectedCategory by remember { mutableStateOf(EXPENSE_CATEGORIES.first()) }; var limitInput by remember { mutableStateOf("") }
+fun BudgetManagerDialog(budgets: List<BudgetEntity>, expenseCategories: List<String>, onSave: (BudgetEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var selectedCategory by remember { mutableStateOf(expenseCategories.firstOrNull() ?: "📦 Другое") }
+    var limitInput by remember { mutableStateOf("") }
+    
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Бюджеты (лимиты)") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Установить лимит на месяц:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { EXPENSE_CATEGORIES.forEach { c -> FilterChip(selected = selectedCategory == c, onClick = { selectedCategory = c }, label = { Text(c) }) } }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { expenseCategories.forEach { c -> FilterChip(selected = selectedCategory == c, onClick = { selectedCategory = c }, label = { Text(c) }) } }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = limitInput, onValueChange = { limitInput = it }, label = { Text("Лимит (UZS)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
                 Button(onClick = { val limitMinor = runCatching { BigDecimal(limitInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (limitMinor != null && limitMinor > 0) { onSave(BudgetEntity(category = selectedCategory, limitMinor = limitMinor)); limitInput = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить лимит") }
