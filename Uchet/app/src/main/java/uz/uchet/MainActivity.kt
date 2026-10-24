@@ -2,6 +2,7 @@ package uz.uchet
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -25,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,8 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +73,8 @@ private val YELLOW = Color(0xFFF9A825)
 
 val DEFAULT_EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val DEFAULT_INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
+
+enum class AppTheme { SYSTEM, LIGHT, DARK }
 
 fun Long.money(): String {
     val abs = kotlin.math.abs(this)
@@ -179,16 +179,26 @@ class VM(app: Application) : AndroidViewModel(app) {
 
 class MainActivity : FragmentActivity() {
     private val pendingCheckTrigger = mutableStateOf(0)
+    private val currentTheme = mutableStateOf(AppTheme.SYSTEM)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        val prefs = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+        currentTheme.value = try { AppTheme.valueOf(prefs.getString("app_theme", "SYSTEM") ?: "SYSTEM") } catch (e: Exception) { AppTheme.SYSTEM }
+
         setContent { 
-            val darkTheme = isSystemInDarkTheme()
-            val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
+            val theme by currentTheme
+            val colorScheme = when (theme) {
+                AppTheme.LIGHT -> lightColorScheme()
+                AppTheme.DARK -> darkColorScheme()
+                AppTheme.SYSTEM -> if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            }
+            
             MaterialTheme(colorScheme = colorScheme) { 
                 Surface {
                     var isAuthenticated by remember { mutableStateOf(false) }
-                    if (isAuthenticated) App(pendingCheckTrigger = pendingCheckTrigger) 
+                    if (isAuthenticated) App(pendingCheckTrigger = pendingCheckTrigger, currentTheme = currentTheme) 
                     else LockScreen(activity = this@MainActivity, onUnlocked = { isAuthenticated = true })
                 } 
             } 
@@ -234,7 +244,7 @@ fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
+fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, currentTheme: MutableState<AppTheme>) {
     val context = LocalContext.current
     val month by vm.month.collectAsState()
     val txs by vm.txs.collectAsState()
@@ -334,7 +344,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
             dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Отмена") } })
     }
 
-    if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope)
+    if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope, currentTheme)
 
     if (showCategoryManager) {
         CategoryManagerDialog(categories, 
@@ -411,7 +421,6 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
                 Spacer(Modifier.height(16.dp))
             }
             
-            // ГРАФИК ТРАТ ПО ДНЯМ
             item {
                 if (txs.any { it.type == TxType.EXPENSE }) {
                     Card(Modifier.fillMaxWidth()) {
@@ -470,13 +479,12 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
 }
 
-// КАСТОМНЫЙ ГРАФИК РАСХОДОВ ПО ДНЯМ (Столбчатая диаграмма)
+// КАСТОМНЫЙ ГРАФИК РАСХОДОВ ПО ДНЯМ
 @Composable
 fun DailyExpenseChart(txs: List<Tx>, yearMonth: YearMonth) {
     val daysInMonth = yearMonth.lengthOfMonth()
     val zone = ZoneId.systemDefault()
     
-    // Группируем траты по дням месяца
     val dailyExpenses = (1..daysInMonth).associateWith { day ->
         txs.filter { 
             val date = Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate()
@@ -569,17 +577,41 @@ fun CategoryManagerDialog(categories: List<CategoryEntity>, onSave: (CategoryEnt
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDialog(context: android.content.Context, onDismiss: () -> Unit, snackbarHostState: SnackbarHostState, scope: kotlinx.coroutines.CoroutineScope) {
+fun SettingsDialog(context: android.content.Context, onDismiss: () -> Unit, snackbarHostState: SnackbarHostState, scope: kotlinx.coroutines.CoroutineScope, currentTheme: MutableState<AppTheme>) {
     val prefs = context.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
+    val settingsPrefs = context.getSharedPreferences("settings_prefs", android.content.Context.MODE_PRIVATE)
+    
     var oldPin by remember { mutableStateOf("") }; var newPin by remember { mutableStateOf("") }; var confirmPin by remember { mutableStateOf("") }
     var useBiometric by remember { mutableStateOf(prefs.getBoolean("use_biometric", true)) }
     val savedPin = prefs.getString("pin", "0000") ?: "0000"
 
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("Настройки безопасности") },
+        onDismissRequest = onDismiss, title = { Text("Настройки") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Тема оформления", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = currentTheme.value == AppTheme.SYSTEM, 
+                        onClick = { currentTheme.value = AppTheme.SYSTEM; settingsPrefs.edit().putString("app_theme", "SYSTEM").apply() }, 
+                        label = { Text("Системная") }
+                    )
+                    FilterChip(
+                        selected = currentTheme.value == AppTheme.LIGHT, 
+                        onClick = { currentTheme.value = AppTheme.LIGHT; settingsPrefs.edit().putString("app_theme", "LIGHT").apply() }, 
+                        label = { Text("Светлая") }
+                    )
+                    FilterChip(
+                        selected = currentTheme.value == AppTheme.DARK, 
+                        onClick = { currentTheme.value = AppTheme.DARK; settingsPrefs.edit().putString("app_theme", "DARK").apply() }, 
+                        label = { Text("Темная") }
+                    )
+                }
+                
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                
                 Text("Смена PIN-кода", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = oldPin, onValueChange = { oldPin = it.filter(Char::isDigit).take(4) }, label = { Text("Текущий PIN") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = newPin, onValueChange = { newPin = it.filter(Char::isDigit).take(4) }, label = { Text("Новый PIN (4 цифры)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
@@ -587,6 +619,7 @@ fun SettingsDialog(context: android.content.Context, onDismiss: () -> Unit, snac
                 Button(onClick = {
                     when { oldPin != savedPin -> scope.launch { snackbarHostState.showSnackbar("Неверный текущий PIN") }; newPin.length != 4 -> scope.launch { snackbarHostState.showSnackbar("Новый PIN должен быть из 4 цифр") }; newPin != confirmPin -> scope.launch { snackbarHostState.showSnackbar("PIN-коды не совпадают") }; else -> { prefs.edit().putString("pin", newPin).apply(); oldPin = ""; newPin = ""; confirmPin = ""; scope.launch { snackbarHostState.showSnackbar("PIN-код изменен!") } } }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Сменить PIN") }
+                
                 Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Text("Вход по отпечатку", style = MaterialTheme.typography.titleSmall); Text("Использовать биометрию", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
