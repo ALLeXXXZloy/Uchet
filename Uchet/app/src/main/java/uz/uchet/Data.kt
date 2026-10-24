@@ -1,5 +1,6 @@
 package uz.uchet
 
+import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
@@ -51,4 +52,22 @@ interface TxDao {
 
     @Query("DELETE FROM cards WHERE last4 = :last4")
     suspend fun deleteCard(last4: String)
+}
+
+// Класс базы данных (тот самый AppDb)
+@Database(entities = [Tx::class, CardEntity::class], version = 2, exportSchema = false)
+abstract class AppDb : RoomDatabase() {
+    abstract fun dao(): TxDao
+
+    companion object {
+        @Volatile private var INSTANCE: AppDb? = null
+
+        fun get(context: Context): AppDb {
+            return INSTANCE ?: synchronized(this) {
+                Room.databaseBuilder(context.applicationContext, AppDb::class.java, "uchet.db")
+                    .fallbackToDestructiveMigration() // Удалит старую БД и создаст новую с картами
+                    .build().also { INSTANCE = it }
+            }
+        }
+    }
 }
