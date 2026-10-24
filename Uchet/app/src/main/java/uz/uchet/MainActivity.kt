@@ -421,6 +421,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
                 Spacer(Modifier.height(16.dp))
             }
             
+            // ГРАФИК ПО ДНЯМ
             item {
                 if (txs.any { it.type == TxType.EXPENSE }) {
                     Card(Modifier.fillMaxWidth()) {
@@ -428,6 +429,20 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
                             Text("Динамика расходов (по дням)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(16.dp))
                             DailyExpenseChart(txs = txs, yearMonth = month)
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
+            // ГРАФИК ПО МЕСЯЦАМ (ГОД)
+            item {
+                if (allTxs.any { it.type == TxType.EXPENSE }) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Расходы по месяцам (за год)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(16.dp))
+                            MonthlyExpenseChart(allTxs = allTxs)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -520,6 +535,55 @@ fun DailyExpenseChart(txs: List<Tx>, yearMonth: YearMonth) {
             Text("1", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             Text("15", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             Text("$daysInMonth", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        }
+    }
+}
+
+// НОВЫЙ ГРАФИК РАСХОДОВ ПО МЕСЯЦАМ
+@Composable
+fun MonthlyExpenseChart(allTxs: List<Tx>) {
+    val currentYear = Year.now()
+    val zone = ZoneId.systemDefault()
+    
+    // Группируем траты по месяцам текущего года
+    val monthlyExpenses = (1..12).associateWith { m ->
+        allTxs.filter { 
+            val date = Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate()
+            date.year == currentYear.value && date.monthValue == m && it.type == TxType.EXPENSE 
+        }.sumOf { it.amountMinor }
+    }
+    
+    val maxExpense = (monthlyExpenses.values.maxOrNull() ?: 1L).toFloat()
+    val barColor = MaterialTheme.colorScheme.secondary // Другой цвет для отличия
+
+    Column {
+        Canvas(modifier = Modifier.fillMaxWidth().height(100.dp)) {
+            val width = size.width
+            val height = size.height
+            val step = width / 12
+            val barWidth = step * 0.6f
+            
+            monthlyExpenses.forEach { (month, amount) ->
+                if (amount > 0) {
+                    val barHeight = (amount / maxExpense) * height
+                    val x = (month - 1) * step + (step - barWidth) / 2
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = Offset(x, height - barHeight),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        // Подписи месяцев (1, 4, 7, 10)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("1", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("4", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("7", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("10", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("12", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
         }
     }
 }
