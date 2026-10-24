@@ -17,14 +17,14 @@ data class Tx(
     val type: TxType,
     val cardLast4: String? = null, // null означает "Наличные"
     val description: String = "",
+    val category: String = "📦 Другое", // НОВОЕ ПОЛЕ
     val timestamp: Long,
     val source: String = "MANUAL"
 )
 
-// Новая таблица для карт и кошельков
 @Entity(tableName = "cards")
 data class CardEntity(
-    @PrimaryKey val last4: String, // "CASH" для наличных, или 4 цифры карты
+    @PrimaryKey val last4: String,
     val name: String,
     val initialBalanceMinor: Long
 )
@@ -43,7 +43,6 @@ interface TxDao {
     @Query("SELECT * FROM txs")
     suspend fun getAll(): List<Tx>
 
-    // Методы для работы с картами
     @Query("SELECT * FROM cards")
     fun observeCards(): Flow<List<CardEntity>>
 
@@ -54,8 +53,7 @@ interface TxDao {
     suspend fun deleteCard(last4: String)
 }
 
-// Класс базы данных (тот самый AppDb)
-@Database(entities = [Tx::class, CardEntity::class], version = 2, exportSchema = false)
+@Database(entities = [Tx::class, CardEntity::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
 
@@ -65,7 +63,7 @@ abstract class AppDb : RoomDatabase() {
         fun get(context: Context): AppDb {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(context.applicationContext, AppDb::class.java, "uchet.db")
-                    .fallbackToDestructiveMigration() // Удалит старую БД и создаст новую с картами
+                    .fallbackToDestructiveMigration()
                     .build().also { INSTANCE = it }
             }
         }
