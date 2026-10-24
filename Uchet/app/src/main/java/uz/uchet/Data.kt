@@ -29,11 +29,23 @@ data class CardEntity(
     val initialBalanceMinor: Long
 )
 
-// НОВАЯ ТАБЛИЦА: Бюджеты (лимиты на категории)
 @Entity(tableName = "budgets")
 data class BudgetEntity(
     @PrimaryKey val category: String,
     val limitMinor: Long
+)
+
+// НОВАЯ ТАБЛИЦА: Регулярные платежи
+@Entity(tableName = "recurring")
+data class RecurringEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val amountMinor: Long,
+    val type: TxType,
+    val cardLast4: String? = null,
+    val description: String = "",
+    val category: String = "📦 Другое",
+    val dayOfMonth: Int, // В какой день месяца списывать (от 1 до 31)
+    val lastExecutedMonth: String = "" // Хранит "2023-10", чтобы не дублировать трату
 )
 
 @Dao
@@ -59,7 +71,6 @@ interface TxDao {
     @Query("DELETE FROM cards WHERE last4 = :last4")
     suspend fun deleteCard(last4: String)
 
-    // Методы для бюджетов
     @Query("SELECT * FROM budgets")
     fun observeBudgets(): Flow<List<BudgetEntity>>
 
@@ -68,10 +79,23 @@ interface TxDao {
 
     @Query("DELETE FROM budgets WHERE category = :category")
     suspend fun deleteBudget(category: String)
+
+    // Методы для регулярных платежей
+    @Query("SELECT * FROM recurring")
+    fun observeRecurring(): Flow<List<RecurringEntity>>
+
+    @Query("SELECT * FROM recurring")
+    suspend fun getRecurringList(): List<RecurringEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRecurring(recurring: RecurringEntity)
+
+    @Delete
+    suspend fun deleteRecurring(recurring: RecurringEntity)
 }
 
-// ОБНОВЛЕНА ВЕРСИЯ ДО 4
-@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class], version = 4, exportSchema = false)
+// ОБНОВЛЕНА ВЕРСИЯ ДО 5
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class], version = 5, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
 
