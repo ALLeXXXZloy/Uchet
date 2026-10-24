@@ -40,6 +40,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.math.RoundingMode // ДОБАВЛЕН ИМПОРТ ДЛЯ ОКРУГЛЕНИЯ
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -52,10 +53,13 @@ private val RED = Color(0xFFC62828)
 val EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
 
+// ОБНОВЛЕННАЯ ФУНКЦИЯ: теперь всегда показывает тийины (2 знака после запятой)
 fun Long.money(): String {
-    val whole = String.format(Locale.US, "%,d", this / 100).replace(',', ' ')
-    val frac = this % 100
-    return if (frac == 0L) whole else "$whole.%02d".format(frac)
+    val abs = kotlin.math.abs(this)
+    val whole = String.format(Locale.US, "%,d", abs / 100).replace(',', ' ')
+    val frac = abs % 100
+    val sign = if (this < 0) "-" else ""
+    return "$sign$whole.%02d".format(frac)
 }
 
 class VM(app: Application) : AndroidViewModel(app) {
@@ -71,7 +75,6 @@ class VM(app: Application) : AndroidViewModel(app) {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Собираем ВСЕ транзакции для расчета баланса
     val allTxs = dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val cards = dao.observeCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -106,7 +109,6 @@ fun App(vm: VM = viewModel()) {
     val zone = ZoneId.systemDefault()
     val byDay = txs.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
 
-    // Считаем реальные балансы карт с учетом ВСЕХ транзакций
     val cardBalances = cards.associate { card ->
         val cardTxs = allTxs.filter { it.cardLast4 == card.last4 || (card.last4 == "CASH" && it.cardLast4 == null) }
         val cardIncome = cardTxs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
@@ -265,7 +267,8 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
                     .addOnSuccessListener { visionText ->
                         val parsedData = parseSmsText(visionText.text)
                         if (parsedData != null) {
-                            amount = parsedData.amount.toBigDecimal().stripTrailingZeros().toPlainString()
+                            // Берем строку, чтобы избежать потери точности
+                            amount = parsedData.amountStr 
                             desc = parsedData.description
                             category = parsedData.category
                             if (parsedData.card != null) {
@@ -301,7 +304,7 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
                     Text(if (isLoading) "Распознавание..." else "📸 Загрузить скриншот СМС")
                 }
 
-                OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, UZS") }, singleLine = true,
+                OutlinedTextField(amount, { amount = it }, label = { Text("Сумма (UZS)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
 
                 Text("Категория:", style = MaterialTheme.typography.labelMedium)
@@ -333,7 +336,11 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
         },
         confirmButton = {
             TextButton({
-                val minor = runCatching { BigDecimal(amount.replace(" ", "").replace(',', '.')).movePointRight(2).toLong() }.getOrNull()
+                // ОКРУГЛЕНИЕ ДО ТИЙИНОВ (HALF_UP)
+                val minor = runCatching { 
+                    BigDecimal(amount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
+                }.getOrNull()
+                
                 val d = runCatching { LocalDate.parse(date.trim(), DATE_FMT) }.getOrNull()
                 when {
                     minor == null || minor <= 0 -> error = "Введите сумму больше нуля"
@@ -371,12 +378,10 @@ fun CardManagerDialog(
     var name by remember { mutableStateOf("") }
     var initialBalance by remember { mutableStateOf("") }
     
-    // Для редактирования/корректировки
     var editingCard by remember { mutableStateOf<CardEntity?>(null) }
     var actualBalanceInput by remember { mutableStateOf("") }
 
     if (editingCard != null) {
-        // Диалог корректировки баланса
         val card = editingCard!!
         val currentMathBalance = cardBalances[card.last4] ?: card.initialBalanceMinor
         
@@ -385,9 +390,9 @@ fun CardManagerDialog(
             title = { Text("Корректировка: ${card.name}") },
             text = {
                 Column {
-                    Text("Приложение считает, что на счете: ${currentMathBalance.money()} UZS", style = MaterialTheme.typography.bodyMedium)
+                    Text("Приложение считает: ${currentMathBalance.money()} UZS", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    Text("Введите РЕАЛЬНЫЙ остаток (например, если увидели его в банке):", style = MaterialTheme.typography.bodyMedium)
+                    Text("Введите РЕАЛЬНЫЙ остаток:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = actualBalanceInput,
@@ -397,16 +402,18 @@ fun CardManagerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("Разница пойдет в стартовый баланс, чтобы не портить статистику доходов и расходов.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text("Разница пойдет в стартовый баланс.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val actualMinor = runCatching { BigDecimal(actualBalanceInput.replace(" ", "").replace(',', '.')).movePointRight(2).toLong() }.getOrNull()
+                    // ОКРУГЛЕНИЕ БАЛАНСА ДО ТИЙИНОВ
+                    val actualMinor = runCatching { 
+                        BigDecimal(actualBalanceInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
+                    }.getOrNull()
+                    
                     if (actualMinor != null) {
-                        // Вычисляем разницу
                         val difference = actualMinor - currentMathBalance
-                        // Обновляем стартовый баланс
                         val newInitial = card.initialBalanceMinor + difference
                         onSave(card.copy(initialBalanceMinor = newInitial))
                         editingCard = null
@@ -417,7 +424,6 @@ fun CardManagerDialog(
             dismissButton = { TextButton(onClick = { editingCard = null }) { Text("Отмена") } }
         )
     } else {
-        // Основной диалог менеджера карт
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("Мои счета и карты") },
@@ -434,7 +440,11 @@ fun CardManagerDialog(
                     Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = {
-                            val balanceMinor = runCatching { BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).toLong() }.getOrNull() ?: 0L
+                            // ОКРУГЛЕНИЕ НАЧАЛЬНОГО БАЛАНСА ДО ТИЙИНОВ
+                            val balanceMinor = runCatching { 
+                                BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
+                            }.getOrNull() ?: 0L
+                            
                             if (name.isNotBlank() && last4.isNotBlank()) {
                                 onSave(CardEntity(last4 = last4, name = name, initialBalanceMinor = balanceMinor))
                                 name = ""; last4 = ""; initialBalance = ""
@@ -459,7 +469,6 @@ fun CardManagerDialog(
                                 Text(c.name, fontWeight = FontWeight.Bold)
                                 Text("Текущий баланс: ${currentBal.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                             }
-                            // Кнопка корректировки
                             IconButton(onClick = { 
                                 editingCard = c
                                 actualBalanceInput = BigDecimal(currentBal).movePointLeft(2).stripTrailingZeros().toPlainString()
@@ -486,14 +495,19 @@ fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
     } catch (e: Exception) { null }
 }
 
-data class ParsedSms(val amount: Double, val card: String?, val description: String, val category: String)
+// Изменена структура: теперь сумма хранится как строка (чтобы не терять точность)
+data class ParsedSms(val amountStr: String, val card: String?, val description: String, val category: String)
 
 fun parseSmsText(text: String): ParsedSms? {
     val lowerText = text.lowercase()
     val amountRegex = Regex("""([\d\s]+(?:[.,]\d{1,2})?)\s*(?:uzs|сум|rub|руб|\$|€)""", RegexOption.IGNORE_CASE)
     val amountMatch = amountRegex.find(text)
-    val amountStr = amountMatch?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".") ?: ""
-    val amount = amountStr.toDoubleOrNull()
+    
+    // Получаем строку с суммой (убираем пробелы, заменяем запятую на точку)
+    val amountStr = amountMatch?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".") ?: return null
+    
+    // Проверяем, что это действительно число
+    if (amountStr.toBigDecimalOrNull() == null) return null
 
     val cardRegex = Regex("""(?:карта|card|\*|х)\s*(\d{4})""", RegexOption.IGNORE_CASE)
     val cardMatch = cardRegex.find(text)
@@ -509,5 +523,5 @@ fun parseSmsText(text: String): ParsedSms? {
         lowerText.contains("перевод") -> "💸 Перевод"
         else -> "📦 Другое"
     }
-    return if (amount != null) ParsedSms(amount, card, description, category) else null
+    return ParsedSms(amountStr, card, description, category)
 }
