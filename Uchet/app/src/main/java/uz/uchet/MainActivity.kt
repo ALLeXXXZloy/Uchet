@@ -7,10 +7,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,7 +34,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,10 +90,7 @@ class VM(app: Application) : AndroidViewModel(app) {
     val recurring = dao.observeRecurring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        // Проверка регулярных платежей при запуске
-        viewModelScope.launch {
-            checkAndExecuteRecurring()
-        }
+        viewModelScope.launch { checkAndExecuteRecurring() }
     }
 
     private suspend fun checkAndExecuteRecurring() {
@@ -129,7 +130,8 @@ class VM(app: Application) : AndroidViewModel(app) {
     fun deleteRecurring(r: RecurringEntity) { viewModelScope.launch { dao.deleteRecurring(r) } }
 }
 
-class MainActivity : ComponentActivity() {
+// Важно: FragmentActivity вместо ComponentActivity для работы отпечатка
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { 
@@ -137,8 +139,98 @@ class MainActivity : ComponentActivity() {
             val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
             
             MaterialTheme(colorScheme = colorScheme) { 
-                Surface { App() } 
+                Surface {
+                    var isAuthenticated by remember { mutableStateOf(false) }
+                    
+                    if (isAuthenticated) {
+                        App()
+                    } else {
+                        LockScreen(
+                            activity = this@MainActivity,
+                            onUnlocked = { isAuthenticated = true }
+                        )
+                    }
+                } 
             } 
+        }
+    }
+}
+
+@Composable
+fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    
+    val prefs = activity.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
+    val savedPin = prefs.getString("pin", "0000") ?: "0000" // По умолчанию 0000
+    
+    val biometricManager = BiometricManager.from(activity)
+    val canUseBiometric = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(16.dp))
+        Text("Приложение заблокировано", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(24.dp))
+        
+        OutlinedTextField(
+            value = pin,
+            onValueChange = { 
+                pin = it.filter { c -> c.isDigit() }.take(4) 
+                error = false
+            },
+            label = { Text("PIN-код (по умолчанию 0000)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true,
+            isError = error,
+            supportingText = { if (error) Text("Неверный PIN-код", color = RED) }
+        )
+        Spacer(Modifier.height(16.dp))
+        
+        Button(
+            onClick = {
+                if (pin == savedPin) {
+                    onUnlocked()
+                } else {
+                    pin = ""
+                    error = true
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Войти")
+        }
+        
+        if (canUseBiometric) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(
+                onClick = {
+                    val executor = ContextCompat.getMainExecutor(activity)
+                    val biometricPrompt = BiometricPrompt(activity, executor,
+                        object : BiometricPrompt.AuthenticationCallback() {
+                            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                                super.onAuthenticationSucceeded(result)
+                                onUnlocked()
+                            }
+                        })
+                    
+                    val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("Вход в приложение")
+                        .setSubtitle("Приложите палец или посмотрите в камеру")
+                        .setNegativeButtonText("Использовать PIN")
+                        .build()
+                    biometricPrompt.authenticate(promptInfo)
+                }
+            ) {
+                Icon(Icons.Default.Fingerprint, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Использовать отпечаток")
+            }
         }
     }
 }
