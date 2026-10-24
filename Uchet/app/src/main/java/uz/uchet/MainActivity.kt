@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(vm: VM = viewModel()) {
+    val context = LocalContext.current
     val month by vm.month.collectAsState()
     val txs by vm.txs.collectAsState()
     val allTxs by vm.allTxs.collectAsState()
@@ -127,6 +128,23 @@ fun App(vm: VM = viewModel()) {
     var filterType by remember { mutableStateOf<TxType?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // ЛАУНЧЕР ДЛЯ СОХРАНЕНИЯ CSV
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val csvData = generateCsv(allTxs)
+                context.contentResolver.openOutputStream(it)?.use { stream ->
+                    stream.write(csvData.toByteArray())
+                }
+                scope.launch { snackbarHostState.showSnackbar("Файл успешно сохранен!") }
+            } catch (e: Exception) {
+                scope.launch { snackbarHostState.showSnackbar("Ошибка: ${e.message}") }
+            }
+        }
+    }
 
     val income = txs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
     val expense = txs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
@@ -157,7 +175,10 @@ fun App(vm: VM = viewModel()) {
                     }
                 },
                 actions = {
-                    // Кнопка Бюджетов
+                    // КНОПКА ЭКСПОРТА CSV
+                    IconButton(onClick = { csvExportLauncher.launch("uchet_export.csv") }) {
+                        Icon(Icons.Default.Share, contentDescription = "Экспорт в CSV")
+                    }
                     IconButton(onClick = { showBudgetManager = true }) {
                         Icon(Icons.Default.Savings, contentDescription = "Бюджеты")
                     }
@@ -191,7 +212,6 @@ fun App(vm: VM = viewModel()) {
                 Spacer(Modifier.height(16.dp))
             }
 
-            // БЛОК БЮДЖЕТОВ
             if (budgets.isNotEmpty()) {
                 item {
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -334,6 +354,35 @@ fun App(vm: VM = viewModel()) {
             onDismiss = { showBudgetManager = false }
         )
     }
+}
+
+// ФУНКЦИЯ ГЕНЕРАЦИИ CSV
+fun generateCsv(transactions: List<Tx>): String {
+    val sb = StringBuilder()
+    // Заголовки для Excel
+    sb.append("Дата,Время,Тип,Сумма (UZS),Категория,Описание,Карта\n")
+    
+    val zone = ZoneId.systemDefault()
+    val dateFmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+
+    transactions.sortedBy { it.timestamp }.forEach { t ->
+        val dt = Instant.ofEpochMilli(t.timestamp).atZone(zone)
+        val date = dt.format(dateFmt)
+        val time = dt.format(timeFmt)
+        val type = t.type.label
+        
+        // Превращаем минорные единицы в строку с тийинами
+        val amount = BigDecimal(t.amountMinor).movePointLeft(2).setScale(2, RoundingMode.HALF_UP).toPlainString()
+        
+        // Очищаем текст от запятых и переносов строк, чтобы не сломать колонки CSV
+        val category = t.category.replace(",", " ")
+        val desc = t.description.replace(",", " ").replace("\n", " ")
+        val card = if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"
+
+        sb.append("$date,$time,$type,$amount,$category,$desc,$card\n")
+    }
+    return sb.toString()
 }
 
 @Composable
@@ -535,7 +584,6 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
     )
 }
 
-// НОВЫЙ ДИАЛОГ ДЛЯ НАСТРОЙКИ БЮДЖЕТОВ
 @Composable
 fun BudgetManagerDialog(
     budgets: List<BudgetEntity>,
@@ -554,7 +602,6 @@ fun BudgetManagerDialog(
                 Text("Установить лимит на месяц:", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(8.dp))
                 
-                // Выбор категории
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     EXPENSE_CATEGORIES.forEach { c ->
                         FilterChip(selected = selectedCategory == c, onClick = { selectedCategory = c }, label = { Text(c) })
@@ -562,7 +609,6 @@ fun BudgetManagerDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 
-                // Ввод суммы
                 OutlinedTextField(
                     value = limitInput,
                     onValueChange = { limitInput = it },
