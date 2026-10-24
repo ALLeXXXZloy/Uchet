@@ -15,9 +15,9 @@ data class Tx(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val amountMinor: Long,
     val type: TxType,
-    val cardLast4: String? = null, // null означает "Наличные"
+    val cardLast4: String? = null,
     val description: String = "",
-    val category: String = "📦 Другое", // НОВОЕ ПОЛЕ
+    val category: String = "📦 Другое",
     val timestamp: Long,
     val source: String = "MANUAL"
 )
@@ -33,6 +33,10 @@ data class CardEntity(
 interface TxDao {
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
     fun observe(start: Long, end: Long): Flow<List<Tx>>
+
+    // НОВЫЙ МЕТОД: получаем ВСЕ транзакции для правильного расчета баланса
+    @Query("SELECT * FROM txs")
+    fun observeAll(): Flow<List<Tx>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(tx: Tx)
