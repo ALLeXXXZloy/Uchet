@@ -70,14 +70,14 @@ private val MONTH_FMT = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
 private val GREEN = Color(0xFF2E7D32)
 private val RED = Color(0xFFC62828)
 private val YELLOW = Color(0xFFF9A825)
+private val BLUE = Color(0xFF1976D2)
 
 val DEFAULT_EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val DEFAULT_INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
 
 enum class AppTheme { SYSTEM, LIGHT, DARK }
-enum class AppLanguage { RU, UZ, EN, TG, KAA, KK } // Добавлены новые языки
+enum class AppLanguage { RU, UZ, EN, TG, KAA, KK }
 
-// ВСТРОЕННЫЙ ПЕРЕВОДЧИК (6 ЯЗЫКОВ)
 object Translations {
     private val dict = mapOf(
         "ru" to mapOf(
@@ -91,7 +91,9 @@ object Translations {
             "sms_title" to "Проверьте операцию из СМС", "sms_data" to "Данные из СМС", "confirm" to "Подтвердить", "reject" to "Отклонить", "pin" to "PIN-код",
             "wrong_pin" to "Неверный PIN-код", "no_found" to "Ничего не найдено", "limit" to "Лимит", "day" to "День месяца (1-31)", "set_limit" to "Сохранить лимит",
             "add_cat" to "Добавить категорию", "add_temp" to "Добавить шаблон", "sys" to "Системная", "light" to "Светлая", "dark" to "Темная",
-            "cash" to "Наличные", "card" to "Карта", "upload_sms" to "Загрузить скриншот СМС"
+            "cash" to "Наличные", "card" to "Карта", "upload_sms" to "Загрузить скриншот СМС",
+            "goals" to "Копилка (Цели)", "add_goal" to "Добавить цель", "goal_name" to "Название цели", "target_amount" to "Целевая сумма",
+            "deposit" to "Пополнить", "deposit_amount" to "Сумма пополнения", "source_card" to "Списать с карты", "completed" to "Достигнуто!"
         ),
         "uz" to mapOf(
             "my_accounts" to "Mening hisoblarim", "exp_by_cat" to "Kategoriyalar bo'yicha xarajatlar", "daily_chart" to "Xarajatlar dinamikasi (kunlik)", "monthly_chart" to "Xarajatlar (oylik)",
@@ -104,7 +106,9 @@ object Translations {
             "sms_title" to "SMS operatsiyasini tekshiring", "sms_data" to "SMS ma'lumotlari", "confirm" to "Tasdiqlash", "reject" to "Rad etish", "pin" to "PIN kod",
             "wrong_pin" to "Noto'g'ri PIN kod", "no_found" to "Hech narsa topilmadi", "limit" to "Limit", "day" to "Oy kuni (1-31)", "set_limit" to "Limitni saqlash",
             "add_cat" to "Kategoriya qo'shish", "add_temp" to "Shablon qo'shish", "sys" to "Tizim", "light" to "Yorug'", "dark" to "Qorong'i",
-            "cash" to "Naqd", "card" to "Karta", "upload_sms" to "SMS skrinshotini yuklash"
+            "cash" to "Naqd", "card" to "Karta", "upload_sms" to "SMS skrinshotini yuklash",
+            "goals" to "Jamg'arma (Maqsadlar)", "add_goal" to "Maqsad qo'shish", "goal_name" to "Maqsad nomi", "target_amount" to "Maqsad summasi",
+            "deposit" to "To'ldirish", "deposit_amount" to "To'ldirish summasi", "source_card" to "Kartadan yechish", "completed" to "Erishildi!"
         ),
         "en" to mapOf(
             "my_accounts" to "My Accounts", "exp_by_cat" to "Expenses by Category", "daily_chart" to "Daily Expense Dynamics", "monthly_chart" to "Monthly Expenses (Year)",
@@ -117,7 +121,9 @@ object Translations {
             "sms_title" to "Check SMS Transaction", "sms_data" to "SMS Data", "confirm" to "Confirm", "reject" to "Reject", "pin" to "PIN Code",
             "wrong_pin" to "Wrong PIN Code", "no_found" to "Nothing found", "limit" to "Limit", "day" to "Day of month (1-31)", "set_limit" to "Save Limit",
             "add_cat" to "Add Category", "add_temp" to "Add Template", "sys" to "System", "light" to "Light", "dark" to "Dark",
-            "cash" to "Cash", "card" to "Card", "upload_sms" to "Upload SMS Screenshot"
+            "cash" to "Cash", "card" to "Card", "upload_sms" to "Upload SMS Screenshot",
+            "goals" to "Savings Goals", "add_goal" to "Add Goal", "goal_name" to "Goal Name", "target_amount" to "Target Amount",
+            "deposit" to "Deposit", "deposit_amount" to "Deposit Amount", "source_card" to "Source Account", "completed" to "Completed!"
         ),
         "tg" to mapOf(
             "my_accounts" to "Ҳисобҳои ман", "exp_by_cat" to "Хароҷот аз рӯи категорияҳо", "daily_chart" to "Динамикаи хароҷот (рӯзона)", "monthly_chart" to "Хароҷот аз рӯи моҳҳо",
@@ -130,7 +136,9 @@ object Translations {
             "sms_title" to "Амалиётро аз SMS тафтиш кунед", "sms_data" to "Маълумот аз SMS", "confirm" to "Тасдиқ кардан", "reject" to "Рад кардан", "pin" to "PIN-код",
             "wrong_pin" to "PIN-коди нодуруст", "no_found" to "Ҳеҷ чиз ёфт нашуд", "limit" to "Ҳудуд", "day" to "Рӯзи моҳ (1-31)", "set_limit" to "Нигоҳ доштани ҳудуд",
             "add_cat" to "Иловаи категория", "add_temp" to "Иловаи қолаб", "sys" to "Системавӣ", "light" to "Равшан", "dark" to "Торик",
-            "cash" to "Нақдӣ", "card" to "Корт", "upload_sms" to "Боркунии скриншоти SMS"
+            "cash" to "Нақдӣ", "card" to "Корт", "upload_sms" to "Боркунии скриншоти SMS",
+            "goals" to "Хазина (Мақсадҳо)", "add_goal" to "Иловаи мақсад", "goal_name" to "Номи мақсад", "target_amount" to "Маблағи мақсад",
+            "deposit" to "Пур кардан", "deposit_amount" to "Маблағи пуркунӣ", "source_card" to "Аз корт гирифтан", "completed" to "Иҷро шуд!"
         ),
         "kaa" to mapOf(
             "my_accounts" to "Meniń esap-layıqlarım", "exp_by_cat" to "Kategoriyalar boyınsha shıǵınlar", "daily_chart" to "Shıǵınlar dinamikası (kúnlik)", "monthly_chart" to "Shıǵınlar (aylıq)",
@@ -143,7 +151,9 @@ object Translations {
             "sms_title" to "SMS operaciyasın tekseriń", "sms_data" to "SMS maǵlıwmatları", "confirm" to "Tastıyıqlaw", "reject" to "Biykaralaw", "pin" to "PIN kod",
             "wrong_pin" to "Nádurıs PIN kod", "no_found" to "Hesh nárse tabılmadı", "limit" to "Limit", "day" to "Ay kúni (1-31)", "set_limit" to "Limitti saqlaw",
             "add_cat" to "Kategoriya qosıw", "add_temp" to "Shablon qosıw", "sys" to "Sistema", "light" to "Jaqtı", "dark" to "Qarańǵı",
-            "cash" to "Naq pul", "card" to "Karta", "upload_sms" to "SMS skrinshotın júklew"
+            "cash" to "Naq pul", "card" to "Karta", "upload_sms" to "SMS skrinshotın júklew",
+            "goals" to "Jıynaǵısh (Máksler)", "add_goal" to "Mákset qosıw", "goal_name" to "Mákset atı", "target_amount" to "Mákset summası",
+            "deposit" to "Toltırıw", "deposit_amount" to "Toltırıw summası", "source_card" to "Kartadan alıw", "completed" to "Orınlandı!"
         ),
         "kk" to mapOf(
             "my_accounts" to "Менің шоттарым", "exp_by_cat" to "Санаттар бойынша шығыстар", "daily_chart" to "Шығыстар динамикасы (күнделікті)", "monthly_chart" to "Шығыстар (айлық)",
@@ -156,7 +166,9 @@ object Translations {
             "sms_title" to "SMS операциясын тексеріңіз", "sms_data" to "SMS деректері", "confirm" to "Растау", "reject" to "Қабылдамау", "pin" to "PIN-код",
             "wrong_pin" to "Қате PIN-код", "no_found" to "Ештеңе табылмады", "limit" to "Лимит", "day" to "Ай күні (1-31)", "set_limit" to "Лимитті сақтау",
             "add_cat" to "Санат қосу", "add_temp" to "Үлгі қосу", "sys" to "Жүйелік", "light" to "Ашық", "dark" to "Қараңғы",
-            "cash" to "Қолма-қол", "card" to "Карта", "upload_sms" to "SMS скриншотын жүктеу"
+            "cash" to "Қолма-қол", "card" to "Карта", "upload_sms" to "SMS скриншотын жүктеу",
+            "goals" to "Жинақ (Мақсаттар)", "add_goal" to "Мақсат қосу", "goal_name" to "Мақсат атауы", "target_amount" to "Мақсат сомасы",
+            "deposit" to "Толықтыру", "deposit_amount" to "Толықтыру сомасы", "source_card" to "Картадан алу", "completed" to "Орындалды!"
         )
     )
 
@@ -212,6 +224,7 @@ class VM(app: Application) : AndroidViewModel(app) {
     val budgets = dao.observeBudgets().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recurring = dao.observeRecurring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val categories = dao.observeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList<CategoryEntity>())
+    val goals = dao.observeGoals().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList<SavingsGoalEntity>())
 
     init {
         viewModelScope.launch { checkAndExecuteRecurring(); seedDefaultCategories() }
@@ -250,16 +263,36 @@ class VM(app: Application) : AndroidViewModel(app) {
     fun saveCategory(c: CategoryEntity) { viewModelScope.launch { dao.upsertCategory(c) } }
     fun deleteCategory(name: String) { viewModelScope.launch { dao.deleteCategory(name) } }
 
+    fun saveGoal(goal: SavingsGoalEntity) { viewModelScope.launch { dao.upsertGoal(goal) } }
+    fun deleteGoal(goal: SavingsGoalEntity) { viewModelScope.launch { dao.deleteGoal(goal) } }
+
+    fun depositToGoal(goal: SavingsGoalEntity, cardLast4: String, amountMinor: Long) {
+        viewModelScope.launch {
+            val tx = Tx(
+                amountMinor = amountMinor,
+                type = TxType.TRANSFER,
+                cardLast4 = cardLast4,
+                description = goal.name,
+                category = "🏦 Копилка",
+                timestamp = System.currentTimeMillis(),
+                source = "SAVINGS"
+            )
+            dao.upsert(tx)
+            dao.upsertGoal(goal.copy(currentAmountMinor = goal.currentAmountMinor + amountMinor))
+        }
+    }
+
     fun createBackup(onResult: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val allTx = allTxs.first(); val allCards = cards.first(); val allBudgets = budgets.first(); val allRecurring = dao.getRecurringList(); val allCats = dao.getCategoriesList()
+                val allTx = allTxs.first(); val allCards = cards.first(); val allBudgets = budgets.first(); val allRecurring = dao.getRecurringList(); val allCats = dao.getCategoriesList(); val allGoals = goals.first()
                 val root = JSONObject()
                 val txsArray = JSONArray(); allTx.forEach { t -> txsArray.put(JSONObject().apply { put("id", t.id); put("amountMinor", t.amountMinor); put("type", t.type.name); put("cardLast4", t.cardLast4 ?: JSONObject.NULL); put("description", t.description); put("category", t.category); put("timestamp", t.timestamp); put("source", t.source) }) }; root.put("txs", txsArray)
                 val cardsArray = JSONArray(); allCards.forEach { c -> cardsArray.put(JSONObject().apply { put("last4", c.last4); put("name", c.name); put("initialBalanceMinor", c.initialBalanceMinor) }) }; root.put("cards", cardsArray)
                 val budgetsArray = JSONArray(); allBudgets.forEach { b -> budgetsArray.put(JSONObject().apply { put("category", b.category); put("limitMinor", b.limitMinor) }) }; root.put("budgets", budgetsArray)
                 val recurringArray = JSONArray(); allRecurring.forEach { r -> recurringArray.put(JSONObject().apply { put("id", r.id); put("amountMinor", r.amountMinor); put("type", r.type.name); put("cardLast4", r.cardLast4 ?: JSONObject.NULL); put("description", r.description); put("category", r.category); put("dayOfMonth", r.dayOfMonth); put("lastExecutedMonth", r.lastExecutedMonth) }) }; root.put("recurring", recurringArray)
                 val catsArray = JSONArray(); allCats.forEach { c -> catsArray.put(JSONObject().apply { put("name", c.name); put("type", c.type.name) }) }; root.put("categories", catsArray)
+                val goalsArray = JSONArray(); allGoals.forEach { g -> goalsArray.put(JSONObject().apply { put("id", g.id); put("name", g.name); put("targetAmountMinor", g.targetAmountMinor); put("currentAmountMinor", g.currentAmountMinor) }) }; root.put("goals", goalsArray)
                 onResult(root.toString(2))
             } catch (e: Exception) { onResult("") }
         }
@@ -275,6 +308,7 @@ class VM(app: Application) : AndroidViewModel(app) {
                 val budgetsArray = root.optJSONArray("budgets"); if (budgetsArray != null) { for (i in 0 until budgetsArray.length()) { val o = budgetsArray.getJSONObject(i); dao.upsertBudget(BudgetEntity(category = o.getString("category"), limitMinor = o.getLong("limitMinor"))) } }
                 val recurringArray = root.optJSONArray("recurring"); if (recurringArray != null) { for (i in 0 until recurringArray.length()) { val o = recurringArray.getJSONObject(i); dao.upsertRecurring(RecurringEntity(id = o.optLong("id"), amountMinor = o.getLong("amountMinor"), type = TxType.valueOf(o.getString("type")), cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"), description = o.optString("description"), category = o.optString("category"), dayOfMonth = o.getInt("dayOfMonth"), lastExecutedMonth = o.optString("lastExecutedMonth"))) } }
                 val catsArray = root.optJSONArray("categories"); if (catsArray != null) { for (i in 0 until catsArray.length()) { val o = catsArray.getJSONObject(i); dao.upsertCategory(CategoryEntity(name = o.getString("name"), type = TxType.valueOf(o.getString("type")))) } }
+                val goalsArray = root.optJSONArray("goals"); if (goalsArray != null) { for (i in 0 until goalsArray.length()) { val o = goalsArray.getJSONObject(i); dao.upsertGoal(SavingsGoalEntity(id = o.optLong("id"), name = o.getString("name"), targetAmountMinor = o.getLong("targetAmountMinor"), currentAmountMinor = o.getLong("currentAmountMinor"))) } }
                 onResult(true)
             } catch (e: Exception) { e.printStackTrace(); onResult(false) }
         }
@@ -300,7 +334,6 @@ class MainActivity : FragmentActivity() {
                 AppTheme.DARK -> darkColorScheme()
                 AppTheme.SYSTEM -> if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
             }
-            
             MaterialTheme(colorScheme = colorScheme) { 
                 Surface {
                     var isAuthenticated by remember { mutableStateOf(false) }
@@ -359,6 +392,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
     val cards by vm.cards.collectAsState()
     val budgets by vm.budgets.collectAsState()
     val recurring by vm.recurring.collectAsState()
+    val goals by vm.goals.collectAsState()
     
     val categories by vm.categories.collectAsState()
     val expenseCategories = categories.filter { it.type == TxType.EXPENSE }.map { it.name }
@@ -372,6 +406,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
     var showBudgetManager by remember { mutableStateOf(false) }
     var showRecurringManager by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
+    var showGoalManager by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
@@ -434,7 +469,8 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         val cardTxs = allTxs.filter { it.cardLast4 == card.last4 || (card.last4 == "CASH" && it.cardLast4 == null) }
         val cardIncome = cardTxs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
         val cardExpense = cardTxs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
-        card.last4 to (card.initialBalanceMinor + cardIncome - cardExpense)
+        val cardTransfer = cardTxs.filter { it.type == TxType.TRANSFER }.sumOf { it.amountMinor }
+        card.last4 to (card.initialBalanceMinor + cardIncome - cardExpense - cardTransfer)
     }
 
     LaunchedEffect(cardBalances) {
@@ -455,10 +491,15 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
     if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope, currentTheme, currentLang)
 
     if (showCategoryManager) {
-        CategoryManagerDialog(categories, currentLang.value, 
-            onSave = { vm.saveCategory(it) }, 
-            onDelete = { vm.deleteCategory(it) }, 
-            onDismiss = { showCategoryManager = false }
+        CategoryManagerDialog(categories, currentLang.value, onSave = { vm.saveCategory(it) }, onDelete = { vm.deleteCategory(it) }, onDismiss = { showCategoryManager = false })
+    }
+
+    if (showGoalManager) {
+        GoalManagerDialog(goals, cards, currentLang.value, 
+            onSaveGoal = { vm.saveGoal(it) }, 
+            onDeleteGoal = { vm.deleteGoal(it) }, 
+            onDeposit = { goal, card, amount -> vm.depositToGoal(goal, card, amount) }, 
+            onDismiss = { showGoalManager = false }
         )
     }
 
@@ -468,9 +509,10 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
             TopAppBar(
                 title = { Row(verticalAlignment = Alignment.CenterVertically) { IconButton({ vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, t("cancel")) }; Text(month.format(MONTH_FMT).replaceFirstChar { it.uppercase() }); IconButton({ vm.shift(1) }) { Icon(Icons.Default.ChevronRight, t("add")) } } },
                 actions = {
+                    IconButton(onClick = { showGoalManager = true }) { Icon(Icons.Default.Savings, t("goals")) }
                     IconButton(onClick = { showCategoryManager = true }) { Icon(Icons.Default.Category, t("categories")) }
                     IconButton(onClick = { showRecurringManager = true }) { Icon(Icons.Default.Autorenew, t("recurring")) }
-                    IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.Savings, t("budgets")) }
+                    IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.AccountBalanceWallet, t("budgets")) }
                     IconButton(onClick = { showCardManager = true }) { Icon(Icons.Default.CreditCard, t("my_accounts")) }
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
@@ -498,6 +540,32 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
                 }
                 Spacer(Modifier.height(16.dp))
             }
+
+            if (goals.isNotEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Savings, null, tint = MaterialTheme.colorScheme.onSecondaryContainer); Spacer(Modifier.width(8.dp)); Text(t("goals"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                            Spacer(Modifier.height(12.dp))
+                            goals.forEach { goal ->
+                                val progress = if (goal.targetAmountMinor > 0) goal.currentAmountMinor.toFloat() / goal.targetAmountMinor.toFloat() else 0f
+                                val isDone = progress >= 1f
+                                Column(Modifier.padding(vertical = 4.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(goal.name, fontWeight = FontWeight.Medium)
+                                        Text("${goal.currentAmountMinor.money()} / ${goal.targetAmountMinor.money()}", style = MaterialTheme.typography.bodySmall, color = if (isDone) GREEN else Color.Unspecified)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(10.dp), color = if (isDone) GREEN else BLUE, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                    if (isDone) Text(t("completed"), color = GREEN, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
             if (budgets.isNotEmpty()) item {
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(16.dp)) {
@@ -597,7 +665,91 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
 
     if (showCardManager) CardManagerDialog(cards, cardBalances, allTxs, { vm.saveCard(it) }, { vm.deleteCard(it) }, currentLang.value, { showCardManager = false })
     if (showBudgetManager) BudgetManagerDialog(budgets, expenseCategories, { vm.saveBudget(it) }, { vm.deleteBudget(it) }, currentLang.value, { showBudgetManager = false })
-    if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, currentLang.value, { showRecurringManager = false })
+    if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, currentLang.value, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false }) // ИСПРАВЛЕНО ЗДЕСЬ
+}
+
+@Composable
+fun GoalManagerDialog(
+    goals: List<SavingsGoalEntity>, 
+    cards: List<CardEntity>,
+    lang: AppLanguage,
+    onSaveGoal: (SavingsGoalEntity) -> Unit, 
+    onDeleteGoal: (SavingsGoalEntity) -> Unit, 
+    onDeposit: (SavingsGoalEntity, String, Long) -> Unit, 
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var targetAmount by remember { mutableStateOf("") }
+    
+    var depositGoal by remember { mutableStateOf<SavingsGoalEntity?>(null) }
+    var depositAmount by remember { mutableStateOf("") }
+    var depositCard by remember { mutableStateOf(cards.firstOrNull()?.last4 ?: "CASH") }
+    
+    val t = { key: String -> Translations.t(key, lang) }
+
+    if (depositGoal != null) {
+        AlertDialog(
+            onDismissRequest = { depositGoal = null },
+            title = { Text("${t("deposit")}: ${depositGoal!!.name}") },
+            text = {
+                Column {
+                    OutlinedTextField(value = depositAmount, onValueChange = { depositAmount = it }, label = { Text(t("deposit_amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    Text(t("source_card") + ":", style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        cards.forEach { c -> FilterChip(selected = depositCard == c.last4, onClick = { depositCard = c.last4 }, label = { Text(c.name) }) }
+                        FilterChip(selected = depositCard == "CASH", onClick = { depositCard = "CASH" }, label = { Text(t("cash")) })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val amountMinor = runCatching { BigDecimal(depositAmount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull()
+                    if (amountMinor != null && amountMinor > 0) {
+                        onDeposit(depositGoal!!, depositCard, amountMinor)
+                        depositGoal = null; depositAmount = ""
+                    }
+                }) { Text(t("deposit")) }
+            },
+            dismissButton = { TextButton(onClick = { depositGoal = null }) { Text(t("cancel")) } }
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss, title = { Text(t("goals")) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(t("add_goal") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(t("goal_name")) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = targetAmount, onValueChange = { targetAmount = it }, label = { Text(t("target_amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = {
+                        val targetMinor = runCatching { BigDecimal(targetAmount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull()
+                        if (name.isNotBlank() && targetMinor != null && targetMinor > 0) {
+                            onSaveGoal(SavingsGoalEntity(name = name.trim(), targetAmountMinor = targetMinor))
+                            name = ""; targetAmount = ""
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text(t("add_goal")) }
+                    
+                    Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                    Text(t("goals") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                    
+                    if (goals.isEmpty()) Text(t("no_found"), color = Color.Gray)
+                    
+                    goals.forEach { goal ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Column(Modifier.weight(1f)) { 
+                                Text(goal.name, fontWeight = FontWeight.Bold)
+                                Text("${goal.currentAmountMinor.money()} / ${goal.targetAmountMinor.money()}", style = MaterialTheme.typography.bodySmall, color = Color.Gray) 
+                            }
+                            IconButton(onClick = { depositGoal = goal }) { Icon(Icons.Default.Add, t("deposit"), tint = GREEN) }
+                            IconButton(onClick = { onDeleteGoal(goal) }) { Icon(Icons.Default.Delete, t("delete"), tint = RED) }
+                        }
+                    }
+                }
+            }, confirmButton = { TextButton(onClick = onDismiss) { Text(t("cancel")) } }
+        )
+    }
 }
 
 @Composable
@@ -760,7 +912,7 @@ fun generateCsv(transactions: List<Tx>): String {
     transactions.sortedBy { it.timestamp }.forEach { t ->
         val dt = Instant.ofEpochMilli(t.timestamp).atZone(zone)
         val amount = BigDecimal(t.amountMinor).movePointLeft(2).setScale(2, RoundingMode.HALF_UP).toPlainString()
-        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else if (t.source == "SMS") "СМС" else "Вручную"}\n")
+        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else if (t.source == "SMS") "СМС" else if (t.source == "SAVINGS") "Копилка" else "Вручную"}\n")
     }
     return sb.toString()
 }
@@ -801,10 +953,10 @@ fun SumRow(label: String, v: Long, color: Color, bold: Boolean = false) {
 
 @Composable
 fun TxRow(t: Tx, lang: AppLanguage, onClick: () -> Unit) {
-    val (sign, color) = when (t.type) { TxType.INCOME -> "+" to GREEN; TxType.EXPENSE -> "−" to RED; TxType.TRANSFER -> "" to Color.Gray }
+    val (sign, color) = when (t.type) { TxType.INCOME -> "+" to GREEN; TxType.EXPENSE -> "−" to RED; TxType.TRANSFER -> "→" to BLUE }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            val icon = when (t.source) { "AUTO" -> "🔄 "; "SMS" -> "✉️ "; else -> "" }
+            val icon = when (t.source) { "AUTO" -> "🔄 "; "SMS" -> "✉️ "; "SAVINGS" -> "🏦 "; else -> "" }
             Text("$icon${Translations.translateCategory(t.category, lang)}  ${t.description}".trim(), maxLines = 2)
             val time = Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
             val cardText = if (t.cardLast4.isNullOrEmpty()) Translations.t("cash", lang) else "*${t.cardLast4}"
@@ -869,7 +1021,7 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, expenseCategories: List<Stri
                     }
                 }
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    TxType.values().forEachIndexed { i, tt -> SegmentedButton(type == tt, { type = tt }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(if(tt == TxType.INCOME) t("income") else t("expense")) } }
+                    TxType.values().forEachIndexed { i, tt -> SegmentedButton(type == tt, { type = tt }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(if(tt == TxType.INCOME) t("income") else if(tt == TxType.EXPENSE) t("expense") else "→") } }
                 }
                 if (!isPendingSms) Button(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), enabled = !isLoading) { Text(if (isLoading) "..." else "📸 " + t("upload_sms")) }
                 OutlinedTextField(amount, { amount = it }, label = { Text(t("amount")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
@@ -926,7 +1078,7 @@ fun RecurringManagerDialog(recurring: List<RecurringEntity>, cards: List<CardEnt
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(t("add_temp") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { TxType.values().forEachIndexed { i, tt -> SegmentedButton(type == tt, { type = tt }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(if(tt == TxType.INCOME) t("income") else t("expense")) } } }
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { TxType.values().forEachIndexed { i, tt -> SegmentedButton(type == tt, { type = tt }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(if(tt == TxType.INCOME) t("income") else if(tt == TxType.EXPENSE) t("expense") else "→") } } }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text(t("amount")) }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(t("desc")) }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
