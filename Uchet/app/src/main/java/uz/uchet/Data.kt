@@ -47,6 +47,13 @@ data class RecurringEntity(
     val lastExecutedMonth: String = ""
 )
 
+// ТАБЛИЦА КАТЕГОРИЙ
+@Entity(tableName = "categories")
+data class CategoryEntity(
+    @PrimaryKey val name: String, // Например "🍔 Еда"
+    val type: TxType
+)
+
 @Dao
 interface TxDao {
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
@@ -91,14 +98,26 @@ interface TxDao {
     @Delete
     suspend fun deleteRecurring(recurring: RecurringEntity)
 
-    // НОВЫЕ МЕТОДЫ ДЛЯ ВОССТАНОВЛЕНИЯ ИЗ БЭКАПА
+    // МЕТОДЫ ДЛЯ КАТЕГОРИЙ
+    @Query("SELECT * FROM categories")
+    fun observeCategories(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories")
+    suspend fun getCategoriesList(): List<CategoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCategory(category: CategoryEntity)
+
+    @Query("DELETE FROM categories WHERE name = :name")
+    suspend fun deleteCategory(name: String)
+
     @Query("DELETE FROM txs") suspend fun clearTxs()
     @Query("DELETE FROM cards") suspend fun clearCards()
     @Query("DELETE FROM budgets") suspend fun clearBudgets()
     @Query("DELETE FROM recurring") suspend fun clearRecurring()
 }
 
-@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class], version = 5, exportSchema = false)
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class], version = 6, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
 
