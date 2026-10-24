@@ -41,7 +41,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay // ДОБАВЛЕН ИМПОРТ ДЛЯ ПАУЗЫ
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -54,6 +54,7 @@ private val DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 private val MONTH_FMT = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
 private val GREEN = Color(0xFF2E7D32)
 private val RED = Color(0xFFC62828)
+private val YELLOW = Color(0xFFF9A825)
 
 val EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
@@ -81,6 +82,7 @@ class VM(app: Application) : AndroidViewModel(app) {
 
     val allTxs = dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val cards = dao.observeCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val budgets = dao.observeBudgets().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun save(t: Tx) { viewModelScope.launch { dao.upsert(t) } }
     fun delete(t: Tx) { viewModelScope.launch { dao.delete(t) } }
@@ -88,6 +90,9 @@ class VM(app: Application) : AndroidViewModel(app) {
     
     fun saveCard(card: CardEntity) { viewModelScope.launch { dao.upsertCard(card) } }
     fun deleteCard(last4: String) { viewModelScope.launch { dao.deleteCard(last4) } }
+    
+    fun saveBudget(budget: BudgetEntity) { viewModelScope.launch { dao.upsertBudget(budget) } }
+    fun deleteBudget(category: String) { viewModelScope.launch { dao.deleteBudget(category) } }
 }
 
 class MainActivity : ComponentActivity() {
@@ -111,10 +116,12 @@ fun App(vm: VM = viewModel()) {
     val txs by vm.txs.collectAsState()
     val allTxs by vm.allTxs.collectAsState()
     val cards by vm.cards.collectAsState()
+    val budgets by vm.budgets.collectAsState()
     
     var editing by remember { mutableStateOf<Tx?>(null) }
     var adding by remember { mutableStateOf(false) }
     var showCardManager by remember { mutableStateOf(false) }
+    var showBudgetManager by remember { mutableStateOf(false) }
 
     var searchQuery by remember { mutableStateOf("") }
     var filterType by remember { mutableStateOf<TxType?>(null) }
@@ -150,6 +157,10 @@ fun App(vm: VM = viewModel()) {
                     }
                 },
                 actions = {
+                    // Кнопка Бюджетов
+                    IconButton(onClick = { showBudgetManager = true }) {
+                        Icon(Icons.Default.Savings, contentDescription = "Бюджеты")
+                    }
                     IconButton(onClick = { showCardManager = true }) {
                         Icon(Icons.Default.CreditCard, contentDescription = "Мои карты")
                     }
@@ -178,6 +189,43 @@ fun App(vm: VM = viewModel()) {
                     FilterChip(selected = filterType == TxType.EXPENSE, onClick = { filterType = TxType.EXPENSE }, label = { Text("Расходы") })
                 }
                 Spacer(Modifier.height(16.dp))
+            }
+
+            // БЛОК БЮДЖЕТОВ
+            if (budgets.isNotEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Бюджеты на месяц", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(12.dp))
+                            
+                            budgets.forEach { budget ->
+                                val spent = txs.filter { it.type == TxType.EXPENSE && it.category == budget.category }.sumOf { it.amountMinor }
+                                val progress = if (budget.limitMinor > 0) spent.toFloat() / budget.limitMinor.toFloat() else 0f
+                                val progressColor = when {
+                                    progress >= 1f -> RED
+                                    progress >= 0.8f -> YELLOW
+                                    else -> GREEN
+                                }
+                                
+                                Column(Modifier.padding(vertical = 4.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(budget.category, fontWeight = FontWeight.Medium)
+                                        Text("${spent.money()} / ${budget.limitMinor.money()}", style = MaterialTheme.typography.bodySmall, color = if (progress >= 1f) RED else Color.Unspecified)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    LinearProgressIndicator(
+                                        progress = { progress.coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                                        color = progressColor,
+                                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
             }
 
             if (cards.isNotEmpty()) {
@@ -251,19 +299,16 @@ fun App(vm: VM = viewModel()) {
             onDelete = editing?.let { e -> { 
                 vm.delete(e); editing = null 
                 scope.launch { 
-                    // ТАЙМЕР НА 5 СЕКУНД
                     val timerJob = launch {
                         delay(5000)
                         snackbarHostState.currentSnackbarData?.dismiss()
                     }
-                    
                     val result = snackbarHostState.showSnackbar(
                         message = "Операция удалена",
                         actionLabel = "Отменить",
-                        duration = SnackbarDuration.Indefinite // Висит, пока таймер не закроет
+                        duration = SnackbarDuration.Indefinite
                     )
-                    
-                    timerJob.cancel() // Если юзер нажал кнопку раньше, отменяем таймер
+                    timerJob.cancel()
                     if (result == SnackbarResult.ActionPerformed) vm.save(e)
                 }
             } }
@@ -278,6 +323,15 @@ fun App(vm: VM = viewModel()) {
             onSave = { vm.saveCard(it) },
             onDelete = { vm.deleteCard(it) },
             onDismiss = { showCardManager = false }
+        )
+    }
+
+    if (showBudgetManager) {
+        BudgetManagerDialog(
+            budgets = budgets,
+            onSave = { vm.saveBudget(it) },
+            onDelete = { vm.deleteBudget(it) },
+            onDismiss = { showBudgetManager = false }
         )
     }
 }
@@ -478,6 +532,81 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, onDismiss: () -> Unit, onSav
                 TextButton(onDismiss) { Text("Отмена") }
             }
         }
+    )
+}
+
+// НОВЫЙ ДИАЛОГ ДЛЯ НАСТРОЙКИ БЮДЖЕТОВ
+@Composable
+fun BudgetManagerDialog(
+    budgets: List<BudgetEntity>,
+    onSave: (BudgetEntity) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedCategory by remember { mutableStateOf(EXPENSE_CATEGORIES.first()) }
+    var limitInput by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Бюджеты (лимиты)") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Установить лимит на месяц:", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                
+                // Выбор категории
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EXPENSE_CATEGORIES.forEach { c ->
+                        FilterChip(selected = selectedCategory == c, onClick = { selectedCategory = c }, label = { Text(c) })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                
+                // Ввод суммы
+                OutlinedTextField(
+                    value = limitInput,
+                    onValueChange = { limitInput = it },
+                    label = { Text("Лимит (UZS)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                Spacer(Modifier.height(8.dp))
+                
+                Button(
+                    onClick = {
+                        val limitMinor = runCatching { 
+                            BigDecimal(limitInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() 
+                        }.getOrNull()
+                        if (limitMinor != null && limitMinor > 0) {
+                            onSave(BudgetEntity(category = selectedCategory, limitMinor = limitMinor))
+                            limitInput = ""
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Сохранить лимит") }
+
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                
+                Text("Ваши лимиты:", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                if (budgets.isEmpty()) {
+                    Text("Лимиты не установлены.", color = Color.Gray)
+                }
+                budgets.forEach { b ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(b.category, fontWeight = FontWeight.Bold)
+                            Text("Лимит: ${b.limitMinor.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        }
+                        IconButton({ onDelete(b.category) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
 }
 
