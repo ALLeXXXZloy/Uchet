@@ -1,6 +1,9 @@
 package uz.uchet
 
+import android.Manifest
 import android.app.Application
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -39,6 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.common.InputImage
@@ -99,16 +105,10 @@ class VM(app: Application) : AndroidViewModel(app) {
         val now = LocalDate.now()
         val currentMonthStr = YearMonth.now().toString()
         val currentDay = now.dayOfMonth
-
         val templates = dao.getRecurringList()
         for (t in templates) {
             if (t.dayOfMonth <= currentDay && t.lastExecutedMonth != currentMonthStr) {
-                val tx = Tx(
-                    amountMinor = t.amountMinor, type = t.type, cardLast4 = t.cardLast4,
-                    description = t.description, category = t.category,
-                    timestamp = now.atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-                    source = "AUTO"
-                )
+                val tx = Tx(amountMinor = t.amountMinor, type = t.type, cardLast4 = t.cardLast4, description = t.description, category = t.category, timestamp = now.atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), source = "AUTO")
                 dao.upsert(tx)
                 dao.upsertRecurring(t.copy(lastExecutedMonth = currentMonthStr))
             }
@@ -128,55 +128,14 @@ class VM(app: Application) : AndroidViewModel(app) {
     fun createBackup(onResult: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val allTx = allTxs.first()
-                val allCards = cards.first()
-                val allBudgets = budgets.first()
-                val allRecurring = dao.getRecurringList()
-
+                val allTx = allTxs.first(); val allCards = cards.first(); val allBudgets = budgets.first(); val allRecurring = dao.getRecurringList()
                 val root = JSONObject()
-
-                val txsArray = JSONArray()
-                allTx.forEach { t ->
-                    txsArray.put(JSONObject().apply {
-                        put("id", t.id); put("amountMinor", t.amountMinor); put("type", t.type.name)
-                        put("cardLast4", t.cardLast4 ?: JSONObject.NULL)
-                        put("description", t.description); put("category", t.category)
-                        put("timestamp", t.timestamp); put("source", t.source)
-                    })
-                }
-                root.put("txs", txsArray)
-
-                val cardsArray = JSONArray()
-                allCards.forEach { c ->
-                    cardsArray.put(JSONObject().apply {
-                        put("last4", c.last4); put("name", c.name); put("initialBalanceMinor", c.initialBalanceMinor)
-                    })
-                }
-                root.put("cards", cardsArray)
-
-                val budgetsArray = JSONArray()
-                allBudgets.forEach { b ->
-                    budgetsArray.put(JSONObject().apply {
-                        put("category", b.category); put("limitMinor", b.limitMinor)
-                    })
-                }
-                root.put("budgets", budgetsArray)
-
-                val recurringArray = JSONArray()
-                allRecurring.forEach { r ->
-                    recurringArray.put(JSONObject().apply {
-                        put("id", r.id); put("amountMinor", r.amountMinor); put("type", r.type.name)
-                        put("cardLast4", r.cardLast4 ?: JSONObject.NULL)
-                        put("description", r.description); put("category", r.category)
-                        put("dayOfMonth", r.dayOfMonth); put("lastExecutedMonth", r.lastExecutedMonth)
-                    })
-                }
-                root.put("recurring", recurringArray)
-
+                val txsArray = JSONArray(); allTx.forEach { t -> txsArray.put(JSONObject().apply { put("id", t.id); put("amountMinor", t.amountMinor); put("type", t.type.name); put("cardLast4", t.cardLast4 ?: JSONObject.NULL); put("description", t.description); put("category", t.category); put("timestamp", t.timestamp); put("source", t.source) }) }; root.put("txs", txsArray)
+                val cardsArray = JSONArray(); allCards.forEach { c -> cardsArray.put(JSONObject().apply { put("last4", c.last4); put("name", c.name); put("initialBalanceMinor", c.initialBalanceMinor) }) }; root.put("cards", cardsArray)
+                val budgetsArray = JSONArray(); allBudgets.forEach { b -> budgetsArray.put(JSONObject().apply { put("category", b.category); put("limitMinor", b.limitMinor) }) }; root.put("budgets", budgetsArray)
+                val recurringArray = JSONArray(); allRecurring.forEach { r -> recurringArray.put(JSONObject().apply { put("id", r.id); put("amountMinor", r.amountMinor); put("type", r.type.name); put("cardLast4", r.cardLast4 ?: JSONObject.NULL); put("description", r.description); put("category", r.category); put("dayOfMonth", r.dayOfMonth); put("lastExecutedMonth", r.lastExecutedMonth) }) }; root.put("recurring", recurringArray)
                 onResult(root.toString(2))
-            } catch (e: Exception) {
-                onResult("")
-            }
+            } catch (e: Exception) { onResult("") }
         }
     }
 
@@ -185,63 +144,19 @@ class VM(app: Application) : AndroidViewModel(app) {
             try {
                 val root = JSONObject(jsonString)
                 dao.clearTxs(); dao.clearCards(); dao.clearBudgets(); dao.clearRecurring()
-
-                val txsArray = root.optJSONArray("txs")
-                if (txsArray != null) {
-                    for (i in 0 until txsArray.length()) {
-                        val o = txsArray.getJSONObject(i)
-                        dao.upsert(Tx(
-                            id = o.optLong("id"), amountMinor = o.getLong("amountMinor"),
-                            type = TxType.valueOf(o.getString("type")),
-                            cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"),
-                            description = o.optString("description"), category = o.optString("category"),
-                            timestamp = o.getLong("timestamp"), source = o.optString("source")
-                        ))
-                    }
-                }
-
-                val cardsArray = root.optJSONArray("cards")
-                if (cardsArray != null) {
-                    for (i in 0 until cardsArray.length()) {
-                        val o = cardsArray.getJSONObject(i)
-                        dao.upsertCard(CardEntity(
-                            last4 = o.getString("last4"), name = o.getString("name"),
-                            initialBalanceMinor = o.getLong("initialBalanceMinor")
-                        ))
-                    }
-                }
-
-                val budgetsArray = root.optJSONArray("budgets")
-                if (budgetsArray != null) {
-                    for (i in 0 until budgetsArray.length()) {
-                        val o = budgetsArray.getJSONObject(i)
-                        dao.upsertBudget(BudgetEntity(category = o.getString("category"), limitMinor = o.getLong("limitMinor")))
-                    }
-                }
-
-                val recurringArray = root.optJSONArray("recurring")
-                if (recurringArray != null) {
-                    for (i in 0 until recurringArray.length()) {
-                        val o = recurringArray.getJSONObject(i)
-                        dao.upsertRecurring(RecurringEntity(
-                            id = o.optLong("id"), amountMinor = o.getLong("amountMinor"),
-                            type = TxType.valueOf(o.getString("type")),
-                            cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"),
-                            description = o.optString("description"), category = o.optString("category"),
-                            dayOfMonth = o.getInt("dayOfMonth"), lastExecutedMonth = o.optString("lastExecutedMonth")
-                        ))
-                    }
-                }
+                val txsArray = root.optJSONArray("txs"); if (txsArray != null) { for (i in 0 until txsArray.length()) { val o = txsArray.getJSONObject(i); dao.upsert(Tx(id = o.optLong("id"), amountMinor = o.getLong("amountMinor"), type = TxType.valueOf(o.getString("type")), cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"), description = o.optString("description"), category = o.optString("category"), timestamp = o.getLong("timestamp"), source = o.optString("source"))) } }
+                val cardsArray = root.optJSONArray("cards"); if (cardsArray != null) { for (i in 0 until cardsArray.length()) { val o = cardsArray.getJSONObject(i); dao.upsertCard(CardEntity(last4 = o.getString("last4"), name = o.getString("name"), initialBalanceMinor = o.getLong("initialBalanceMinor"))) } }
+                val budgetsArray = root.optJSONArray("budgets"); if (budgetsArray != null) { for (i in 0 until budgetsArray.length()) { val o = budgetsArray.getJSONObject(i); dao.upsertBudget(BudgetEntity(category = o.getString("category"), limitMinor = o.getLong("limitMinor"))) } }
+                val recurringArray = root.optJSONArray("recurring"); if (recurringArray != null) { for (i in 0 until recurringArray.length()) { val o = recurringArray.getJSONObject(i); dao.upsertRecurring(RecurringEntity(id = o.optLong("id"), amountMinor = o.getLong("amountMinor"), type = TxType.valueOf(o.getString("type")), cardLast4 = if (o.isNull("cardLast4")) null else o.getString("cardLast4"), description = o.optString("description"), category = o.optString("category"), dayOfMonth = o.getInt("dayOfMonth"), lastExecutedMonth = o.optString("lastExecutedMonth"))) } }
                 onResult(true)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                onResult(false)
-            }
+            } catch (e: Exception) { e.printStackTrace(); onResult(false) }
         }
     }
 }
 
 class MainActivity : FragmentActivity() {
+    private val pendingCheckTrigger = mutableStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { 
@@ -250,10 +165,17 @@ class MainActivity : FragmentActivity() {
             MaterialTheme(colorScheme = colorScheme) { 
                 Surface {
                     var isAuthenticated by remember { mutableStateOf(false) }
-                    if (isAuthenticated) App() else LockScreen(activity = this@MainActivity, onUnlocked = { isAuthenticated = true })
+                    if (isAuthenticated) App(pendingCheckTrigger = pendingCheckTrigger) 
+                    else LockScreen(activity = this@MainActivity, onUnlocked = { isAuthenticated = true })
                 } 
             } 
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingCheckTrigger.value++
     }
 }
 
@@ -261,47 +183,26 @@ class MainActivity : FragmentActivity() {
 fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
-    
     val prefs = activity.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
     val savedPin = prefs.getString("pin", "0000") ?: "0000"
-    val useBiometric = prefs.getBoolean("use_biometric", true) // По умолчанию включено
-    
+    val useBiometric = prefs.getBoolean("use_biometric", true)
     val biometricManager = BiometricManager.from(activity)
     val canUseBiometric = useBiometric && biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
 
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(16.dp)); Text("Приложение заблокировано", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.height(24.dp))
+        OutlinedTextField(value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(4); error = false }, label = { Text("PIN-код") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), singleLine = true, isError = error, supportingText = { if (error) Text("Неверный PIN-код", color = RED) })
         Spacer(Modifier.height(16.dp))
-        Text("Приложение заблокировано", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(24.dp))
-        
-        OutlinedTextField(
-            value = pin,
-            onValueChange = { pin = it.filter { c -> c.isDigit() }.take(4); error = false },
-            label = { Text("PIN-код") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true, isError = error,
-            supportingText = { if (error) Text("Неверный PIN-код", color = RED) }
-        )
-        Spacer(Modifier.height(16.dp))
-        
-        Button(onClick = { if (pin == savedPin) onUnlocked() else { pin = ""; error = true } }, modifier = Modifier.fillMaxWidth()) {
-            Text("Войти")
-        }
-        
+        Button(onClick = { if (pin == savedPin) onUnlocked() else { pin = ""; error = true } }, modifier = Modifier.fillMaxWidth()) { Text("Войти") }
         if (canUseBiometric) {
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = {
                 val executor = ContextCompat.getMainExecutor(activity)
                 val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        super.onAuthenticationSucceeded(result); onUnlocked()
-                    }
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { super.onAuthenticationSucceeded(result); onUnlocked() }
                 })
-                val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                    .setTitle("Вход в приложение").setSubtitle("Приложите палец")
-                    .setNegativeButtonText("Использовать PIN").build()
+                val promptInfo = BiometricPrompt.PromptInfo.Builder().setTitle("Вход в приложение").setSubtitle("Приложите палец").setNegativeButtonText("Использовать PIN").build()
                 biometricPrompt.authenticate(promptInfo)
             }) { Icon(Icons.Default.Fingerprint, null); Spacer(Modifier.width(8.dp)); Text("Использовать отпечаток") }
         }
@@ -310,7 +211,7 @@ fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App(vm: VM = viewModel()) {
+fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null) {
     val context = LocalContext.current
     val month by vm.month.collectAsState()
     val txs by vm.txs.collectAsState()
@@ -321,6 +222,7 @@ fun App(vm: VM = viewModel()) {
     
     var editing by remember { mutableStateOf<Tx?>(null) }
     var adding by remember { mutableStateOf(false) }
+    var isPendingSms by remember { mutableStateOf(false) }
     var showCardManager by remember { mutableStateOf(false) }
     var showBudgetManager by remember { mutableStateOf(false) }
     var showRecurringManager by remember { mutableStateOf(false) }
@@ -334,50 +236,52 @@ fun App(vm: VM = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val permissionLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
+    LaunchedEffect(Unit) {
+        val permissions = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.RECEIVE_SMS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (permissions.isNotEmpty()) permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    fun checkPendingSms() {
+        if (editing != null || adding) return
+        val prefs = context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE)
+        val pendingJson = prefs.getString("pending", null) ?: return
+        try {
+            val obj = JSONObject(pendingJson)
+            val pendingTx = Tx(id = 0, amountMinor = obj.getLong("amountMinor"), type = TxType.valueOf(obj.getString("type")), cardLast4 = if (obj.isNull("card")) null else obj.getString("card"), description = obj.optString("description"), category = obj.optString("category"), timestamp = obj.optLong("timestamp"), source = "SMS")
+            editing = pendingTx
+            isPendingSms = true
+        } catch (e: Exception) { prefs.edit().remove("pending").apply() }
+    }
+
+    val trigger = pendingCheckTrigger?.value ?: 0
+    LaunchedEffect(trigger) { checkPendingSms() }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) checkPendingSms() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val csvExportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
-        uri?.let {
-            try {
-                context.contentResolver.openOutputStream(it)?.use { stream -> stream.write(generateCsv(allTxs).toByteArray()) }
-                scope.launch { snackbarHostState.showSnackbar("CSV файл сохранен!") }
-            } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка: ${e.message}") } }
-        }
+        uri?.let { try { context.contentResolver.openOutputStream(it)?.use { stream -> stream.write(generateCsv(allTxs).toByteArray()) }; scope.launch { snackbarHostState.showSnackbar("CSV сохранен!") } } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка: ${e.message}") } } }
     }
 
     val jsonExportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-        uri?.let {
-            vm.createBackup { jsonString ->
-                if (jsonString.isNotEmpty()) {
-                    try {
-                        context.contentResolver.openOutputStream(it)?.use { stream -> stream.write(jsonString.toByteArray()) }
-                        scope.launch { snackbarHostState.showSnackbar("Резервная копия сохранена!") }
-                    } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка: ${e.message}") } }
-                } else {
-                    scope.launch { snackbarHostState.showSnackbar("Ошибка создания копии") }
-                }
-            }
-        }
+        uri?.let { vm.createBackup { jsonString -> if (jsonString.isNotEmpty()) { try { context.contentResolver.openOutputStream(it)?.use { stream -> stream.write(jsonString.toByteArray()) }; scope.launch { snackbarHostState.showSnackbar("Копия сохранена!") } } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка: ${e.message}") } } } else { scope.launch { snackbarHostState.showSnackbar("Ошибка создания копии") } } } }
     }
 
     val jsonImportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    val jsonString = stream.bufferedReader().readText()
-                    pendingRestoreJson = jsonString
-                    showRestoreConfirm = true
-                }
-            } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка чтения файла") } }
-        }
+        uri?.let { try { context.contentResolver.openInputStream(it)?.use { stream -> pendingRestoreJson = stream.bufferedReader().readText(); showRestoreConfirm = true } } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Ошибка чтения файла") } } }
     }
 
     val income = txs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
     val expense = txs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
     val zone = ZoneId.systemDefault()
-    
-    val filteredTxs = txs.filter { t ->
-        (searchQuery.isEmpty() || t.description.contains(searchQuery, true) || t.category.contains(searchQuery, true)) &&
-        (filterType == null || t.type == filterType)
-    }
+    val filteredTxs = txs.filter { t -> (searchQuery.isEmpty() || t.description.contains(searchQuery, true) || t.category.contains(searchQuery, true)) && (filterType == null || t.type == filterType) }
     val byDay = filteredTxs.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
 
     val cardBalances = cards.associate { card ->
@@ -393,89 +297,44 @@ fun App(vm: VM = viewModel()) {
         prefs.edit().putLong("total_balance", total).apply()
         val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
         val componentName = android.content.ComponentName(context, BalanceWidget::class.java)
-        val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-        appWidgetIds.forEach { id -> BalanceWidget.updateWidget(context, appWidgetManager, id) }
+        appWidgetManager.getAppWidgetIds(componentName).forEach { id -> BalanceWidget.updateWidget(context, appWidgetManager, id) }
     }
 
     if (showRestoreConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRestoreConfirm = false },
-            title = { Text("Восстановление данных") },
-            text = { Text("Внимание! Все текущие данные будут удалены и заменены данными из резервной копии. Продолжить?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.restoreBackup(pendingRestoreJson) { success ->
-                        if (success) scope.launch { snackbarHostState.showSnackbar("Данные успешно восстановлены!") }
-                        else scope.launch { snackbarHostState.showSnackbar("Ошибка: Неверный формат файла") }
-                    }
-                    showRestoreConfirm = false
-                }) { Text("Восстановить", color = RED) }
-            },
-            dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Отмена") } }
-        )
+        AlertDialog(onDismissRequest = { showRestoreConfirm = false }, title = { Text("Восстановление данных") }, text = { Text("Внимание! Все текущие данные будут удалены и заменены данными из резервной копии. Продолжить?") },
+            confirmButton = { TextButton(onClick = { vm.restoreBackup(pendingRestoreJson) { success -> if (success) scope.launch { snackbarHostState.showSnackbar("Данные восстановлены!") } else scope.launch { snackbarHostState.showSnackbar("Ошибка: Неверный формат файла") } }; showRestoreConfirm = false }) { Text("Восстановить", color = RED) } },
+            dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Отмена") } })
     }
 
-    if (showSettings) {
-        SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope)
-    }
+    if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope)
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton({ vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, "Назад") }
-                        Text(month.format(MONTH_FMT).replaceFirstChar { it.uppercase() })
-                        IconButton({ vm.shift(1) }) { Icon(Icons.Default.ChevronRight, "Вперед") }
-                    }
-                },
+                title = { Row(verticalAlignment = Alignment.CenterVertically) { IconButton({ vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, "Назад") }; Text(month.format(MONTH_FMT).replaceFirstChar { it.uppercase() }); IconButton({ vm.shift(1) }) { Icon(Icons.Default.ChevronRight, "Вперед") } } },
                 actions = {
                     IconButton(onClick = { showRecurringManager = true }) { Icon(Icons.Default.Autorenew, "Регулярные") }
                     IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.Savings, "Бюджеты") }
                     IconButton(onClick = { showCardManager = true }) { Icon(Icons.Default.CreditCard, "Карты") }
-                    
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Еще") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Экспорт в Excel (CSV)") },
-                                leadingIcon = { Icon(Icons.Default.Share, null) },
-                                onClick = { showMenu = false; csvExportLauncher.launch("uchet_export.csv") }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Сохранить копию (JSON)") },
-                                leadingIcon = { Icon(Icons.Default.Backup, null) },
-                                onClick = { showMenu = false; jsonExportLauncher.launch("uchet_backup.json") }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Загрузить копию (JSON)") },
-                                leadingIcon = { Icon(Icons.Default.Restore, null) },
-                                onClick = { showMenu = false; jsonImportLauncher.launch(arrayOf("application/json")) }
-                            )
+                            DropdownMenuItem(text = { Text("Экспорт в Excel (CSV)") }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { showMenu = false; csvExportLauncher.launch("uchet_export.csv") })
+                            DropdownMenuItem(text = { Text("Сохранить копию (JSON)") }, leadingIcon = { Icon(Icons.Default.Backup, null) }, onClick = { showMenu = false; jsonExportLauncher.launch("uchet_backup.json") })
+                            DropdownMenuItem(text = { Text("Загрузить копию (JSON)") }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { showMenu = false; jsonImportLauncher.launch(arrayOf("application/json")) })
                             HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Настройки") },
-                                leadingIcon = { Icon(Icons.Default.Settings, null) },
-                                onClick = { showMenu = false; showSettings = true }
-                            )
+                            DropdownMenuItem(text = { Text("Настройки") }, leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = { showMenu = false; showSettings = true })
                         }
                     }
                 }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton({ adding = true }) { Icon(Icons.Default.Add, "Добавить") }
-        }
+        floatingActionButton = { FloatingActionButton({ adding = true }) { Icon(Icons.Default.Add, "Добавить") } }
     ) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 88.dp)) {
-            
             item {
-                OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(), placeholder = { Text("Поиск...") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true
-                )
+                OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Поиск...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = filterType == null, onClick = { filterType = null }, label = { Text("Все") })
@@ -484,77 +343,53 @@ fun App(vm: VM = viewModel()) {
                 }
                 Spacer(Modifier.height(16.dp))
             }
-
-            if (budgets.isNotEmpty()) {
-                item {
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Бюджеты на месяц", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(12.dp))
-                            budgets.forEach { budget ->
-                                val spent = txs.filter { it.type == TxType.EXPENSE && it.category == budget.category }.sumOf { it.amountMinor }
-                                val progress = if (budget.limitMinor > 0) spent.toFloat() / budget.limitMinor.toFloat() else 0f
-                                val progressColor = when { progress >= 1f -> RED; progress >= 0.8f -> YELLOW; else -> GREEN }
-                                Column(Modifier.padding(vertical = 4.dp)) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(budget.category, fontWeight = FontWeight.Medium)
-                                        Text("${spent.money()} / ${budget.limitMinor.money()}", style = MaterialTheme.typography.bodySmall, color = if (progress >= 1f) RED else Color.Unspecified)
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(8.dp), color = progressColor, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                                }
+            if (budgets.isNotEmpty()) item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Бюджеты на месяц", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp))
+                        budgets.forEach { budget ->
+                            val spent = txs.filter { it.type == TxType.EXPENSE && it.category == budget.category }.sumOf { it.amountMinor }
+                            val progress = if (budget.limitMinor > 0) spent.toFloat() / budget.limitMinor.toFloat() else 0f
+                            val progressColor = when { progress >= 1f -> RED; progress >= 0.8f -> YELLOW; else -> GREEN }
+                            Column(Modifier.padding(vertical = 4.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(budget.category, fontWeight = FontWeight.Medium); Text("${spent.money()} / ${budget.limitMinor.money()}", style = MaterialTheme.typography.bodySmall, color = if (progress >= 1f) RED else Color.Unspecified) }
+                                Spacer(Modifier.height(4.dp))
+                                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(8.dp), color = progressColor, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                             }
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
                 }
+                Spacer(Modifier.height(16.dp))
             }
-
-            if (cards.isNotEmpty()) {
-                item {
-                    Text("Мои счета", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        cards.forEach { card ->
-                            val currentBalance = cardBalances[card.last4] ?: card.initialBalanceMinor
-                            Card(modifier = Modifier.width(140.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(card.name, style = MaterialTheme.typography.labelMedium)
-                                    Text("${currentBalance.money()} UZS", fontWeight = FontWeight.Bold, color = if (currentBalance >= 0) GREEN else RED)
-                                }
-                            }
+            if (cards.isNotEmpty()) item {
+                Text("Мои счета", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    cards.forEach { card ->
+                        val currentBalance = cardBalances[card.last4] ?: card.initialBalanceMinor
+                        Card(modifier = Modifier.width(140.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                            Column(Modifier.padding(12.dp)) { Text(card.name, style = MaterialTheme.typography.labelMedium); Text("${currentBalance.money()} UZS", fontWeight = FontWeight.Bold, color = if (currentBalance >= 0) GREEN else RED) }
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
                 }
+                Spacer(Modifier.height(16.dp))
             }
-
             item {
                 val expensesByCategory = txs.filter { it.type == TxType.EXPENSE }.groupBy { it.category }.mapValues { (_, list) -> list.sumOf { it.amountMinor } }
                 if (expensesByCategory.isNotEmpty()) {
                     Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Расходы по категориям", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(16.dp))
-                            CategoryPieChart(expensesByCategory)
-                        }
+                        Column(Modifier.padding(16.dp)) { Text("Расходы по категориям", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp)); CategoryPieChart(expensesByCategory) }
                     }
                     Spacer(Modifier.height(16.dp))
                 }
             }
-
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        SumRow("Доходы за месяц", income, GREEN)
-                        SumRow("Расходы за месяц", expense, RED)
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        SumRow("Итого за месяц", income - expense, MaterialTheme.colorScheme.onSurface, bold = true)
+                        SumRow("Доходы за месяц", income, GREEN); SumRow("Расходы за месяц", expense, RED); HorizontalDivider(Modifier.padding(vertical = 8.dp)); SumRow("Итого за месяц", income - expense, MaterialTheme.colorScheme.onSurface, bold = true)
                     }
                 }
             }
-            
             if (filteredTxs.isEmpty()) item { Text("Ничего не найдено.", Modifier.padding(top = 32.dp), color = Color.Gray) }
-            
             byDay.forEach { (day, list) ->
                 item { Text(day.format(DATE_FMT), Modifier.padding(top = 16.dp, bottom = 4.dp), style = MaterialTheme.typography.labelLarge, color = Color.Gray) }
                 items(list, key = { it.id }) { t -> TxRow(t) { editing = t } }
@@ -563,19 +398,10 @@ fun App(vm: VM = viewModel()) {
     }
 
     if (adding || editing != null) {
-        TxDialog(
-            initial = editing, cards = cards,
-            onDismiss = { adding = false; editing = null },
-            onSave = { vm.save(it); adding = false; editing = null },
-            onDelete = editing?.let { e -> { 
-                vm.delete(e); editing = null 
-                scope.launch { 
-                    val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }
-                    val result = snackbarHostState.showSnackbar("Операция удалена", "Отменить", SnackbarDuration.Indefinite)
-                    timerJob.cancel()
-                    if (result == SnackbarResult.ActionPerformed) vm.save(e)
-                }
-            } }
+        TxDialog(initial = editing, cards = cards, isPendingSms = isPendingSms,
+            onDismiss = { if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
+            onSave = { vm.save(it); if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
+            onDelete = if (isPendingSms) null else editing?.let { e -> { vm.delete(e); editing = null; scope.launch { val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }; val result = snackbarHostState.showSnackbar("Операция удалена", "Отменить", SnackbarDuration.Indefinite); timerJob.cancel(); if (result == SnackbarResult.ActionPerformed) vm.save(e) } } }
         )
     }
 
@@ -587,81 +413,28 @@ fun App(vm: VM = viewModel()) {
 @Composable
 fun SettingsDialog(context: android.content.Context, onDismiss: () -> Unit, snackbarHostState: SnackbarHostState, scope: kotlinx.coroutines.CoroutineScope) {
     val prefs = context.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
-    
-    var oldPin by remember { mutableStateOf("") }
-    var newPin by remember { mutableStateOf("") }
-    var confirmPin by remember { mutableStateOf("") }
+    var oldPin by remember { mutableStateOf("") }; var newPin by remember { mutableStateOf("") }; var confirmPin by remember { mutableStateOf("") }
     var useBiometric by remember { mutableStateOf(prefs.getBoolean("use_biometric", true)) }
-    
     val savedPin = prefs.getString("pin", "0000") ?: "0000"
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Настройки безопасности") },
+        onDismissRequest = onDismiss, title = { Text("Настройки безопасности") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                
-                Text("Смена PIN-кода", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(8.dp))
-                
-                OutlinedTextField(
-                    value = oldPin, onValueChange = { oldPin = it.filter(Char::isDigit).take(4) },
-                    label = { Text("Текущий PIN") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = newPin, onValueChange = { newPin = it.filter(Char::isDigit).take(4) },
-                    label = { Text("Новый PIN (4 цифры)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = confirmPin, onValueChange = { confirmPin = it.filter(Char::isDigit).take(4) },
-                    label = { Text("Повторите новый PIN") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                
-                Button(
-                    onClick = {
-                        when {
-                            oldPin != savedPin -> scope.launch { snackbarHostState.showSnackbar("Неверный текущий PIN") }
-                            newPin.length != 4 -> scope.launch { snackbarHostState.showSnackbar("Новый PIN должен быть из 4 цифр") }
-                            newPin != confirmPin -> scope.launch { snackbarHostState.showSnackbar("PIN-коды не совпадают") }
-                            else -> {
-                                prefs.edit().putString("pin", newPin).apply()
-                                oldPin = ""; newPin = ""; confirmPin = ""
-                                scope.launch { snackbarHostState.showSnackbar("PIN-код успешно изменен!") }
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Сменить PIN") }
-
-                Spacer(Modifier.height(24.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                
+                Text("Смена PIN-кода", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = oldPin, onValueChange = { oldPin = it.filter(Char::isDigit).take(4) }, label = { Text("Текущий PIN") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = newPin, onValueChange = { newPin = it.filter(Char::isDigit).take(4) }, label = { Text("Новый PIN (4 цифры)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = confirmPin, onValueChange = { confirmPin = it.filter(Char::isDigit).take(4) }, label = { Text("Повторите новый PIN") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    when { oldPin != savedPin -> scope.launch { snackbarHostState.showSnackbar("Неверный текущий PIN") }; newPin.length != 4 -> scope.launch { snackbarHostState.showSnackbar("Новый PIN должен быть из 4 цифр") }; newPin != confirmPin -> scope.launch { snackbarHostState.showSnackbar("PIN-коды не совпадают") }; else -> { prefs.edit().putString("pin", newPin).apply(); oldPin = ""; newPin = ""; confirmPin = ""; scope.launch { snackbarHostState.showSnackbar("PIN-код изменен!") } } }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Сменить PIN") }
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Вход по отпечатку", style = MaterialTheme.typography.titleSmall)
-                        Text("Использовать биометрию при запуске", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                    Switch(
-                        checked = useBiometric,
-                        onCheckedChange = { 
-                            useBiometric = it 
-                            prefs.edit().putBoolean("use_biometric", it).apply()
-                        }
-                    )
+                    Column(Modifier.weight(1f)) { Text("Вход по отпечатку", style = MaterialTheme.typography.titleSmall); Text("Использовать биометрию", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
+                    Switch(checked = useBiometric, onCheckedChange = { useBiometric = it; prefs.edit().putBoolean("use_biometric", it).apply() })
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+        }, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
 }
 
@@ -671,7 +444,7 @@ fun generateCsv(transactions: List<Tx>): String {
     transactions.sortedBy { it.timestamp }.forEach { t ->
         val dt = Instant.ofEpochMilli(t.timestamp).atZone(zone)
         val amount = BigDecimal(t.amountMinor).movePointLeft(2).setScale(2, RoundingMode.HALF_UP).toPlainString()
-        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else "Вручную"}\n")
+        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else if (t.source == "SMS") "СМС" else "Вручную"}\n")
     }
     return sb.toString()
 }
@@ -694,8 +467,7 @@ fun CategoryPieChart(data: Map<String, Long>) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             sortedData.take(4).forEachIndexed { index, entry ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).background(colors[index % colors.size], shape = CircleShape))
-                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.size(10.dp).background(colors[index % colors.size], shape = CircleShape)); Spacer(Modifier.width(6.dp))
                     Text("${entry.key}: ${(entry.value / total * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -716,7 +488,8 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
     val (sign, color) = when (t.type) { TxType.INCOME -> "+" to GREEN; TxType.EXPENSE -> "−" to RED; TxType.TRANSFER -> "" to Color.Gray }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("${if (t.source == "AUTO") "🔄 " else ""}${t.category}  ${t.description}".trim(), maxLines = 2)
+            val icon = when (t.source) { "AUTO" -> "🔄 "; "SMS" -> "✉️ "; else -> "" }
+            Text("$icon${t.category}  ${t.description}".trim(), maxLines = 2)
             val time = Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
             val cardText = if (t.cardLast4.isNullOrEmpty()) "Наличные" else "*${t.cardLast4}"
             Text(listOfNotNull(time, cardText).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
@@ -725,10 +498,182 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
     }
 }
 
-// ОСТАЛЬНЫЕ ДИАЛОГИ - БЕЗ ИЗМЕНЕНИЙ, ОСТАВЛЯЕМ КАК ЕСТЬ
-// Вставьте сюда коды TxDialog, RecurringManagerDialog, BudgetManagerDialog, CardManagerDialog из вашего текущего файла
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TxDialog(initial: Tx?, cards: List<CardEntity>, isPendingSms: Boolean = false, onDismiss: () -> Unit, onSave: (Tx) -> Unit, onDelete: (() -> Unit)?) {
+    val zone = ZoneId.systemDefault()
+    val initDt = initial?.let { Instant.ofEpochMilli(it.timestamp).atZone(zone) } ?: ZonedDateTime.now(zone)
+    var type by remember { mutableStateOf(initial?.type ?: TxType.EXPENSE) }
+    var category by remember { mutableStateOf(initial?.category ?: EXPENSE_CATEGORIES.last()) }
+    var amount by remember { mutableStateOf(initial?.let { BigDecimal(it.amountMinor).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "") }
+    var selectedCard by remember { mutableStateOf(initial?.cardLast4 ?: "CASH") }
+    var isCustomCard by remember { mutableStateOf(initial?.cardLast4?.let { !cards.map { c -> c.last4 }.contains(it) } ?: false) }
+    var desc by remember { mutableStateOf(initial?.description ?: "") }
+    var date by remember { mutableStateOf(initDt.format(DATE_FMT)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(false) }
 
-// ... КОДЫ ДИАЛОГОВ ...
+    LaunchedEffect(type) {
+        val currentList = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES
+        if (!currentList.contains(category)) category = currentList.last()
+    }
+
+    val imagePicker = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            isLoading = true; error = null
+            val bitmap = uriToBitmap(context, it)
+            bitmap?.let { bmp ->
+                val image = InputImage.fromBitmap(bmp, 0)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                recognizer.process(image).addOnSuccessListener { visionText ->
+                    val parsedData = parseSmsText(visionText.text)
+                    if (parsedData != null) {
+                        amount = parsedData.amountStr; desc = parsedData.description; category = parsedData.category
+                        if (parsedData.card != null) { selectedCard = parsedData.card; if (cards.none { it.last4 == selectedCard }) isCustomCard = true }
+                    } else { error = "Не удалось найти сумму в тексте" }
+                    isLoading = false
+                }.addOnFailureListener { isLoading = false; error = "Не удалось распознать текст" }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(when { isPendingSms -> "Проверьте операцию из СМС"; initial == null -> "Новая операция"; else -> "Изменить" }) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (isPendingSms) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                        Column(Modifier.padding(12.dp)) { Text("Данные из СМС", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold); Text("Проверьте данные. Если что-то не так — исправьте перед сохранением.", style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    TxType.values().forEachIndexed { i, t -> SegmentedButton(type == t, { type = t }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(t.label) } }
+                }
+                if (!isPendingSms) Button(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), enabled = !isLoading) { Text(if (isLoading) "Распознавание..." else "📸 Загрузить скриншот СМС") }
+                OutlinedTextField(amount, { amount = it }, label = { Text("Сумма (UZS)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                Text("Категория:", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val currentCategories = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES
+                    currentCategories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) }
+                }
+                Text("Счет оплаты:", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    cards.forEach { c -> FilterChip(selected = selectedCard == c.last4 && !isCustomCard, onClick = { selectedCard = c.last4; isCustomCard = false }, label = { Text(c.name) }) }
+                    FilterChip(selected = isCustomCard, onClick = { isCustomCard = true; selectedCard = "" }, label = { Text("Другая...") })
+                }
+                if (isCustomCard) OutlinedTextField(value = selectedCard, onValueChange = { selectedCard = it.filter(Char::isDigit).take(4) }, label = { Text("Последние 4 цифры карты") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(desc, { desc = it }, label = { Text("Описание") })
+                OutlinedTextField(date, { date = it }, label = { Text("Дата (дд.мм.гггг)") }, singleLine = true)
+                error?.let { Text(it, color = RED) }
+            }
+        },
+        confirmButton = {
+            TextButton({
+                val minor = runCatching { BigDecimal(amount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull()
+                val d = runCatching { LocalDate.parse(date.trim(), DATE_FMT) }.getOrNull()
+                when {
+                    minor == null || minor <= 0 -> error = "Введите сумму больше нуля"
+                    d == null -> error = "Дата: дд.мм.гггг"
+                    isCustomCard && selectedCard.length != 4 -> error = "Нужны ровно 4 цифры карты"
+                    else -> {
+                        val finalCard = if (selectedCard.isEmpty() || selectedCard == "CASH") null else selectedCard
+                        onSave(Tx(id = initial?.id ?: 0, amountMinor = minor, type = type, cardLast4 = finalCard, description = desc.trim(), category = category, timestamp = d.atTime(initDt.toLocalTime()).atZone(zone).toInstant().toEpochMilli(), source = initial?.source ?: if (isPendingSms) "SMS" else "MANUAL"))
+                    }
+                }
+            }) { Text(if (isPendingSms) "Подтвердить" else "Сохранить") }
+        },
+        dismissButton = { Row { onDelete?.let { TextButton(it) { Text("Удалить", color = RED) } }; TextButton(onDismiss) { Text(if (isPendingSms) "Отклонить" else "Отмена") } } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RecurringManagerDialog(recurring: List<RecurringEntity>, cards: List<CardEntity>, onSave: (RecurringEntity) -> Unit, onDelete: (RecurringEntity) -> Unit, onDismiss: () -> Unit) {
+    var type by remember { mutableStateOf(TxType.EXPENSE) }; var category by remember { mutableStateOf(EXPENSE_CATEGORIES.last()) }; var amount by remember { mutableStateOf("") }; var selectedCard by remember { mutableStateOf("CASH") }; var desc by remember { mutableStateOf("") }; var dayOfMonth by remember { mutableStateOf("1") }
+    AlertDialog(
+        onDismissRequest = onDismiss, title = { Text("Регулярные платежи") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Добавить шаблон:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { TxType.values().forEachIndexed { i, t -> SegmentedButton(type == t, { type = t; category = if (t == TxType.INCOME) INCOME_CATEGORIES.last() else EXPENSE_CATEGORIES.last() }, SegmentedButtonDefaults.itemShape(i, TxType.values().size)) { Text(t.label) } } }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Сумма (UZS)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Описание (например: Аренда)") }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = dayOfMonth, onValueChange = { dayOfMonth = it.filter(Char::isDigit).take(2) }, label = { Text("День месяца (1-31)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)); Spacer(Modifier.height(8.dp))
+                Text("Категория:", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { val currentCategories = if (type == TxType.INCOME) INCOME_CATEGORIES else EXPENSE_CATEGORIES; currentCategories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) } }
+                Spacer(Modifier.height(8.dp))
+                Text("Счет:", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { cards.forEach { c -> FilterChip(selected = selectedCard == c.last4, onClick = { selectedCard = c.last4 }, label = { Text(c.name) }) } }
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { val minor = runCatching { BigDecimal(amount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); val day = dayOfMonth.toIntOrNull(); if (minor != null && minor > 0 && day != null && day in 1..31) { onSave(RecurringEntity(amountMinor = minor, type = type, cardLast4 = if(selectedCard == "CASH") null else selectedCard, description = desc.trim(), category = category, dayOfMonth = day)); amount = ""; desc = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Добавить шаблон") }
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                Text("Ваши шаблоны:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                if (recurring.isEmpty()) Text("Шаблонов пока нет.", color = Color.Gray)
+                recurring.forEach { r -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(r.description.ifBlank { r.category }, fontWeight = FontWeight.Bold); Text("${r.amountMinor.money()} UZS · ${r.dayOfMonth}-е число", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }; IconButton({ onDelete(r) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) } } }
+            }
+        }, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
+
+@Composable
+fun BudgetManagerDialog(budgets: List<BudgetEntity>, onSave: (BudgetEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var selectedCategory by remember { mutableStateOf(EXPENSE_CATEGORIES.first()) }; var limitInput by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss, title = { Text("Бюджеты (лимиты)") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Установить лимит на месяц:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { EXPENSE_CATEGORIES.forEach { c -> FilterChip(selected = selectedCategory == c, onClick = { selectedCategory = c }, label = { Text(c) }) } }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = limitInput, onValueChange = { limitInput = it }, label = { Text("Лимит (UZS)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
+                Button(onClick = { val limitMinor = runCatching { BigDecimal(limitInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (limitMinor != null && limitMinor > 0) { onSave(BudgetEntity(category = selectedCategory, limitMinor = limitMinor)); limitInput = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить лимит") }
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                Text("Ваши лимиты:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                if (budgets.isEmpty()) Text("Лимиты не установлены.", color = Color.Gray)
+                budgets.forEach { b -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(b.category, fontWeight = FontWeight.Bold); Text("Лимит: ${b.limitMinor.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }; IconButton({ onDelete(b.category) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) } } }
+            }
+        }, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
+
+@Composable
+fun CardManagerDialog(cards: List<CardEntity>, cardBalances: Map<String, Long>, allTxs: List<Tx>, onSave: (CardEntity) -> Unit, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var last4 by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }; var initialBalance by remember { mutableStateOf("") }
+    var editingCard by remember { mutableStateOf<CardEntity?>(null) }; var actualBalanceInput by remember { mutableStateOf("") }
+
+    if (editingCard != null) {
+        val card = editingCard!!; val currentMathBalance = cardBalances[card.last4] ?: card.initialBalanceMinor
+        AlertDialog(onDismissRequest = { editingCard = null }, title = { Text("Корректировка: ${card.name}") },
+            text = { Column { Text("Приложение считает: ${currentMathBalance.money()} UZS", style = MaterialTheme.typography.bodyMedium); Spacer(Modifier.height(8.dp)); Text("Введите РЕАЛЬНЫЙ остаток:", style = MaterialTheme.typography.bodyMedium); Spacer(Modifier.height(8.dp)); OutlinedTextField(value = actualBalanceInput, onValueChange = { actualBalanceInput = it }, label = { Text("Реальный баланс (UZS)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { TextButton(onClick = { val actualMinor = runCatching { BigDecimal(actualBalanceInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (actualMinor != null) { onSave(card.copy(initialBalanceMinor = card.initialBalanceMinor + (actualMinor - currentMathBalance))); editingCard = null; actualBalanceInput = "" } }) { Text("Применить") } },
+            dismissButton = { TextButton(onClick = { editingCard = null }) { Text("Отмена") } })
+    } else {
+        AlertDialog(onDismissRequest = onDismiss, title = { Text("Мои счета и карты") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Добавить новый:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название (напр. Наличные)") }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = last4, onValueChange = { last4 = it.uppercase() }, label = { Text("Номер (CASH или 4 цифры)") }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = initialBalance, onValueChange = { initialBalance = it }, label = { Text("Начальный баланс (UZS)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
+                    Button(onClick = { val balanceMinor = runCatching { BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull() ?: 0L; if (name.isNotBlank() && last4.isNotBlank()) { onSave(CardEntity(last4 = last4, name = name, initialBalanceMinor = balanceMinor)); name = ""; last4 = ""; initialBalance = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Добавить") }
+                    Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                    Text("Ваши счета:", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                    if (cards.isEmpty()) Text("У вас пока нет добавленных счетов.", color = Color.Gray)
+                    cards.forEach { c ->
+                        val currentBal = cardBalances[c.last4] ?: c.initialBalanceMinor
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) { Text(c.name, fontWeight = FontWeight.Bold); Text("Текущий баланс: ${currentBal.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
+                            IconButton(onClick = { editingCard = c; actualBalanceInput = BigDecimal(currentBal).movePointLeft(2).stripTrailingZeros().toPlainString() }) { Icon(Icons.Default.Edit, "Корректировать", tint = MaterialTheme.colorScheme.primary) }
+                            IconButton({ onDelete(c.last4) }) { Icon(Icons.Default.Delete, "Удалить", tint = RED) }
+                        }
+                    }
+                }
+            }, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } })
+    }
+}
 
 fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
     return try {
