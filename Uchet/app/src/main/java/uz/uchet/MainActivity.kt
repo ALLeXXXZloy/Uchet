@@ -125,7 +125,6 @@ class VM(app: Application) : AndroidViewModel(app) {
     fun saveRecurring(r: RecurringEntity) { viewModelScope.launch { dao.upsertRecurring(r) } }
     fun deleteRecurring(r: RecurringEntity) { viewModelScope.launch { dao.deleteRecurring(r) } }
 
-    // СОХРАНЕНИЕ В JSON
     fun createBackup(onResult: (String) -> Unit) {
         viewModelScope.launch {
             try {
@@ -174,23 +173,19 @@ class VM(app: Application) : AndroidViewModel(app) {
                 }
                 root.put("recurring", recurringArray)
 
-                onResult(root.toString(2)) // 2 - отступы для красоты
+                onResult(root.toString(2))
             } catch (e: Exception) {
-                onResult("") // Ошибка
+                onResult("")
             }
         }
     }
 
-    // ВОССТАНОВЛЕНИЕ ИЗ JSON
     fun restoreBackup(jsonString: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             try {
                 val root = JSONObject(jsonString)
-                
-                // Очищаем старые данные
                 dao.clearTxs(); dao.clearCards(); dao.clearBudgets(); dao.clearRecurring()
 
-                // Восстанавливаем Транзакции
                 val txsArray = root.optJSONArray("txs")
                 if (txsArray != null) {
                     for (i in 0 until txsArray.length()) {
@@ -205,7 +200,6 @@ class VM(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
-                // Восстанавливаем Карты
                 val cardsArray = root.optJSONArray("cards")
                 if (cardsArray != null) {
                     for (i in 0 until cardsArray.length()) {
@@ -217,18 +211,14 @@ class VM(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
-                // Восстанавливаем Бюджеты
                 val budgetsArray = root.optJSONArray("budgets")
                 if (budgetsArray != null) {
                     for (i in 0 until budgetsArray.length()) {
                         val o = budgetsArray.getJSONObject(i)
-                        dao.upsertBudget(BudgetEntity(
-                            category = o.getString("category"), limitMinor = o.getLong("limitMinor")
-                        ))
+                        dao.upsertBudget(BudgetEntity(category = o.getString("category"), limitMinor = o.getLong("limitMinor")))
                     }
                 }
 
-                // Восстанавливаем Регулярные
                 val recurringArray = root.optJSONArray("recurring")
                 if (recurringArray != null) {
                     for (i in 0 until recurringArray.length()) {
@@ -242,7 +232,6 @@ class VM(app: Application) : AndroidViewModel(app) {
                         ))
                     }
                 }
-
                 onResult(true)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -275,9 +264,10 @@ fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
     
     val prefs = activity.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
     val savedPin = prefs.getString("pin", "0000") ?: "0000"
+    val useBiometric = prefs.getBoolean("use_biometric", true) // По умолчанию включено
     
     val biometricManager = BiometricManager.from(activity)
-    val canUseBiometric = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+    val canUseBiometric = useBiometric && biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
 
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
@@ -288,7 +278,7 @@ fun LockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
         OutlinedTextField(
             value = pin,
             onValueChange = { pin = it.filter { c -> c.isDigit() }.take(4); error = false },
-            label = { Text("PIN-код (по умолчанию 0000)") },
+            label = { Text("PIN-код") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true, isError = error,
@@ -334,6 +324,7 @@ fun App(vm: VM = viewModel()) {
     var showCardManager by remember { mutableStateOf(false) }
     var showBudgetManager by remember { mutableStateOf(false) }
     var showRecurringManager by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf("") }
@@ -343,7 +334,6 @@ fun App(vm: VM = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Лаунчер для сохранения CSV
     val csvExportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
         uri?.let {
             try {
@@ -353,7 +343,6 @@ fun App(vm: VM = viewModel()) {
         }
     }
 
-    // Лаунчер для сохранения JSON
     val jsonExportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         uri?.let {
             vm.createBackup { jsonString ->
@@ -369,7 +358,6 @@ fun App(vm: VM = viewModel()) {
         }
     }
 
-    // Лаунчер для загрузки JSON
     val jsonImportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
             try {
@@ -409,7 +397,6 @@ fun App(vm: VM = viewModel()) {
         appWidgetIds.forEach { id -> BalanceWidget.updateWidget(context, appWidgetManager, id) }
     }
 
-    // ДИАЛОГ ПОДТВЕРЖДЕНИЯ ВОССТАНОВЛЕНИЯ
     if (showRestoreConfirm) {
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = false },
@@ -428,6 +415,10 @@ fun App(vm: VM = viewModel()) {
         )
     }
 
+    if (showSettings) {
+        SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope)
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -444,7 +435,6 @@ fun App(vm: VM = viewModel()) {
                     IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.Savings, "Бюджеты") }
                     IconButton(onClick = { showCardManager = true }) { Icon(Icons.Default.CreditCard, "Карты") }
                     
-                    // МЕНЮ С ТРЕМЯ ТОЧКАМИ
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Еще") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -462,6 +452,12 @@ fun App(vm: VM = viewModel()) {
                                 text = { Text("Загрузить копию (JSON)") },
                                 leadingIcon = { Icon(Icons.Default.Restore, null) },
                                 onClick = { showMenu = false; jsonImportLauncher.launch(arrayOf("application/json")) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Настройки") },
+                                leadingIcon = { Icon(Icons.Default.Settings, null) },
+                                onClick = { showMenu = false; showSettings = true }
                             )
                         }
                     }
@@ -588,6 +584,87 @@ fun App(vm: VM = viewModel()) {
     if (showRecurringManager) RecurringManagerDialog(recurring, cards, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
 }
 
+@Composable
+fun SettingsDialog(context: android.content.Context, onDismiss: () -> Unit, snackbarHostState: SnackbarHostState, scope: kotlinx.coroutines.CoroutineScope) {
+    val prefs = context.getSharedPreferences("auth_prefs", android.content.Context.MODE_PRIVATE)
+    
+    var oldPin by remember { mutableStateOf("") }
+    var newPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var useBiometric by remember { mutableStateOf(prefs.getBoolean("use_biometric", true)) }
+    
+    val savedPin = prefs.getString("pin", "0000") ?: "0000"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Настройки безопасности") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                
+                Text("Смена PIN-кода", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = oldPin, onValueChange = { oldPin = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Текущий PIN") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = newPin, onValueChange = { newPin = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Новый PIN (4 цифры)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = confirmPin, onValueChange = { confirmPin = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Повторите новый PIN") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                
+                Button(
+                    onClick = {
+                        when {
+                            oldPin != savedPin -> scope.launch { snackbarHostState.showSnackbar("Неверный текущий PIN") }
+                            newPin.length != 4 -> scope.launch { snackbarHostState.showSnackbar("Новый PIN должен быть из 4 цифр") }
+                            newPin != confirmPin -> scope.launch { snackbarHostState.showSnackbar("PIN-коды не совпадают") }
+                            else -> {
+                                prefs.edit().putString("pin", newPin).apply()
+                                oldPin = ""; newPin = ""; confirmPin = ""
+                                scope.launch { snackbarHostState.showSnackbar("PIN-код успешно изменен!") }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Сменить PIN") }
+
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Вход по отпечатку", style = MaterialTheme.typography.titleSmall)
+                        Text("Использовать биометрию при запуске", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
+                    Switch(
+                        checked = useBiometric,
+                        onCheckedChange = { 
+                            useBiometric = it 
+                            prefs.edit().putBoolean("use_biometric", it).apply()
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
+
 fun generateCsv(transactions: List<Tx>): String {
     val sb = StringBuilder("Дата,Время,Тип,Сумма (UZS),Категория,Описание,Карта,Источник\n")
     val zone = ZoneId.systemDefault()
@@ -648,9 +725,8 @@ fun TxRow(t: Tx, onClick: () -> Unit) {
     }
 }
 
-// ОСТАЛЬНЫЕ ДИАЛОГИ (TxDialog, Recurring, Budget, Card) - БЕЗ ИЗМЕНЕНИЙ, ОСТАВЛЯЕМ КАК ЕСТЬ
-// ... (вставьте сюда коды TxDialog, RecurringManagerDialog, BudgetManagerDialog, CardManagerDialog из предыдущего сообщения)
-// Для экономии места в чате я не дублирую их здесь, но в вашем файле они должны быть!
+// ОСТАЛЬНЫЕ ДИАЛОГИ - БЕЗ ИЗМЕНЕНИЙ, ОСТАВЛЯЕМ КАК ЕСТЬ
+// Вставьте сюда коды TxDialog, RecurringManagerDialog, BudgetManagerDialog, CardManagerDialog из вашего текущего файла
 
 // ... КОДЫ ДИАЛОГОВ ...
 
