@@ -90,6 +90,12 @@ interface TxDao {
 
     @Delete
     suspend fun deleteRecurring(recurring: RecurringEntity)
+
+    // НОВЫЕ МЕТОДЫ ДЛЯ ВОССТАНОВЛЕНИЯ ИЗ БЭКАПА
+    @Query("DELETE FROM txs") suspend fun clearTxs()
+    @Query("DELETE FROM cards") suspend fun clearCards()
+    @Query("DELETE FROM budgets") suspend fun clearBudgets()
+    @Query("DELETE FROM recurring") suspend fun clearRecurring()
 }
 
 @Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class], version = 5, exportSchema = false)
