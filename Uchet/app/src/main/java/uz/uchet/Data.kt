@@ -35,7 +35,6 @@ data class BudgetEntity(
     val limitMinor: Long
 )
 
-// НОВАЯ ТАБЛИЦА: Регулярные платежи
 @Entity(tableName = "recurring")
 data class RecurringEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -44,8 +43,8 @@ data class RecurringEntity(
     val cardLast4: String? = null,
     val description: String = "",
     val category: String = "📦 Другое",
-    val dayOfMonth: Int, // В какой день месяца списывать (от 1 до 31)
-    val lastExecutedMonth: String = "" // Хранит "2023-10", чтобы не дублировать трату
+    val dayOfMonth: Int,
+    val lastExecutedMonth: String = ""
 )
 
 @Dao
@@ -80,7 +79,6 @@ interface TxDao {
     @Query("DELETE FROM budgets WHERE category = :category")
     suspend fun deleteBudget(category: String)
 
-    // Методы для регулярных платежей
     @Query("SELECT * FROM recurring")
     fun observeRecurring(): Flow<List<RecurringEntity>>
 
@@ -94,7 +92,6 @@ interface TxDao {
     suspend fun deleteRecurring(recurring: RecurringEntity)
 }
 
-// ОБНОВЛЕНА ВЕРСИЯ ДО 5
 @Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class], version = 5, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
