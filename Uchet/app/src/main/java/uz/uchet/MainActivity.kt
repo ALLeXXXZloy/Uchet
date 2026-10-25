@@ -844,7 +844,8 @@ fun GoalManagerDialog(
                     if (goals.isEmpty()) Text(t("no_found"), color = Color.Gray)
                     
                     goals.forEach { goal ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                        // ИСПРАВЛЕНО ЗДЕСЬ (убран дубликат modifier)
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) { 
                                 Text(goal.name, fontWeight = FontWeight.Bold)
                                 Text("${goal.currentAmountMinor.money()} / ${goal.targetAmountMinor.money()}", style = MaterialTheme.typography.bodySmall, color = Color.Gray) 
