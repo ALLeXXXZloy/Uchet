@@ -38,12 +38,16 @@ dependencies {
     // Базовые библиотеки Android
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
+    
+    // ИСПРАВЛЕНИЕ ОШИБКИ "lower 16 bits for requestCode":
+    // Обновляем activity-compose и принудительно задаем совместимую версию fragment
     implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.fragment:fragment:1.8.0") 
     
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
 
-    // Jetpack Compose
+    // Jetpack Compose (интерфейс)
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -59,9 +63,12 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Google ML Kit (Сканер СМС)
+    // Google ML Kit (Сканер СМС и чеков)
     implementation("com.google.mlkit:text-recognition:16.0.0")
 
     // Библиотека для отпечатка пальца и Face ID
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // Библиотека для чтения PDF
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
