@@ -66,7 +66,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -645,7 +644,7 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         TxDialog(initial = editing, cards = cards, expenseCategories = expenseCategories, incomeCategories = incomeCategories, currentLang = currentLang.value, isPendingSms = isPendingSms, rates = rates,
             onDismiss = { if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
             onSave = { vm.save(it); if (isPendingSms) { context.getSharedPreferences("pending_sms", android.content.Context.MODE_PRIVATE).edit().remove("pending").apply(); isPendingSms = false }; adding = false; editing = null },
-            onDelete = if (isPendingSms) null else editing?.let { e -> { vm.delete(e); editing = null; scope.launch { val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }; val result = snackbarHostState.showSnackbar("Удалено", "Отменить", SnackbarDuration.Indefinite); timerJob.cancel(); if (result == SnackbarResult.ActionPerformed) vm.save(e) } } }
+            onDelete = if (isPendingSms) null else editing?.let { e -> { vm.delete(e); editing = null; scope.launch { val timerJob = launch { delay(5000); snackbarHostState.currentSnackbarData?.dismiss() }; val result = snackbarHostState.showSnackbar(message = "Удалено", actionLabel = "Отменить", duration = SnackbarDuration.Indefinite); timerJob.cancel(); if (result == SnackbarResult.ActionPerformed) vm.save(e) } } }
         )
     }
 
@@ -711,9 +710,10 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, expenseCategories: List<Stri
 
     val cameraLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.TakePicture()) { success ->
         if (success) {
-            tempCameraUri?.let { uri ->
+            val currentUri = tempCameraUri
+            if (currentUri != null) {
                 isLoading = true
-                val bitmap = uriToBitmap(context, uri)
+                val bitmap = uriToBitmap(context, currentUri)
                 bitmap?.let { bmp ->
                     val image = InputImage.fromBitmap(bmp, 0)
                     val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -792,8 +792,9 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, expenseCategories: List<Stri
                         Button(onClick = {
                             val file = File(context.filesDir, "images/${UUID.randomUUID()}.jpg")
                             file.parentFile?.mkdirs()
-                            tempCameraUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                            cameraLauncher.launch(tempCameraUri)
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                            tempCameraUri = uri
+                            cameraLauncher.launch(uri)
                         }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.CameraAlt, null); Spacer(Modifier.width(4.dp)); Text(t("take_photo")) }
                         
                         Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PhotoLibrary, null); Spacer(Modifier.width(4.dp)); Text(t("choose_photo")) }
@@ -862,7 +863,33 @@ fun TxDialog(initial: Tx?, cards: List<CardEntity>, expenseCategories: List<Stri
     )
 }
 
-// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ПАРСИНГА ---
+@Composable
+fun GoalManagerDialog(goals: List<SavingsGoalEntity>, cards: List<CardEntity>, lang: AppLanguage, onSaveGoal: (SavingsGoalEntity) -> Unit, onDeleteGoal: (SavingsGoalEntity) -> Unit, onDeposit: (SavingsGoalEntity, String, Long) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }; var targetAmount by remember { mutableStateOf("") }
+    var depositGoal by remember { mutableStateOf<SavingsGoalEntity?>(null) }; var depositAmount by remember { mutableStateOf("") }
+    var depositCard by remember { mutableStateOf(cards.firstOrNull()?.last4 ?: "CASH") }
+    val t = { key: String -> Translations.t(key, lang) }
+    val currentDepositGoal = depositGoal
+
+    if (currentDepositGoal != null) {
+        AlertDialog(onDismissRequest = { depositGoal = null }, title = { Text("${t("deposit")}: ${currentDepositGoal.name}") },
+            text = { Column { OutlinedTextField(value = depositAmount, onValueChange = { depositAmount = it }, label = { Text(t("deposit_amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp)); Text(t("source_card") + ":", style = MaterialTheme.typography.labelMedium); Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { cards.forEach { c -> FilterChip(selected = depositCard == c.last4, onClick = { depositCard = c.last4 }, label = { Text(c.name) }) }; FilterChip(selected = depositCard == "CASH", onClick = { depositCard = "CASH" }, label = { Text(t("cash")) }) } } },
+            confirmButton = { TextButton(onClick = { val amountMinor = runCatching { BigDecimal(depositAmount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (amountMinor != null && amountMinor > 0) { onDeposit(currentDepositGoal, depositCard, amountMinor); depositGoal = null; depositAmount = "" } }) { Text(t("deposit")) } },
+            dismissButton = { TextButton(onClick = { depositGoal = null }) { Text(t("cancel")) } })
+    } else {
+        AlertDialog(onDismissRequest = onDismiss, title = { Text(t("goals")) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(t("add_goal") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(t("goal_name")) }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = targetAmount, onValueChange = { targetAmount = it }, label = { Text(t("target_amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
+                Button(onClick = { val targetMinor = runCatching { BigDecimal(targetAmount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (name.isNotBlank() && targetMinor != null && targetMinor > 0) { onSaveGoal(SavingsGoalEntity(name = name.trim(), targetAmountMinor = targetMinor)); name = ""; targetAmount = "" } }, modifier = Modifier.fillMaxWidth()) { Text(t("add_goal")) }
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                Text(t("goals") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                if (goals.isEmpty()) Text(t("no_found"), color = Color.Gray)
+                goals.forEach { goal -> Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(goal.name, fontWeight = FontWeight.Bold); Text("${goal.currentAmountMinor.money()} / ${goal.targetAmountMinor.money()}", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }; IconButton(onClick = { depositGoal = goal }) { Icon(Icons.Default.Add, t("deposit"), tint = GREEN) }; IconButton(onClick = { onDeleteGoal(goal) }) { Icon(Icons.Default.Delete, t("delete"), tint = RED) } } }
+            } }, confirmButton = { TextButton(onClick = onDismiss) { Text(t("cancel")) } })
+    }
+}
 
 fun extractTextFromPdf(context: Context, uri: Uri): String {
     return try { context.contentResolver.openInputStream(uri)?.use { inputStream -> val doc = PDDocument.load(inputStream); val stripper = PDFTextStripper(); val text = stripper.getText(doc); doc.close(); text } ?: "" } catch (e: Exception) { "" }
@@ -919,8 +946,6 @@ fun parseCardsFromScreenshot(text: String): List<CardEntity> {
     return result
 }
 
-data class ParsedSms(val amountStr: String, val card: String?, val description: String, val category: String)
-
 fun parseSmsText(text: String): ParsedSms? {
     val lowerText = text.lowercase()
     val lines = text.lines()
@@ -944,7 +969,14 @@ fun parseSmsText(text: String): ParsedSms? {
     return ParsedSms(amountStr, card, description, category)
 }
 
-// --- UI КОМПОНЕНТЫ (ГРАФИКИ, ДИАЛОГИ) ---
+fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+        else MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+    } catch (e: Exception) { null }
+}
+
+// --- ОСТАЛЬНЫЕ UI КОМПОНЕНТЫ (ГРАФИКИ, НАСТРОЙКИ, МЕНЕДЖЕРЫ) ---
 
 @Composable
 fun DailyExpenseChart(txs: List<Tx>, yearMonth: YearMonth) {
