@@ -47,11 +47,19 @@ data class RecurringEntity(
     val lastExecutedMonth: String = ""
 )
 
-// ТАБЛИЦА КАТЕГОРИЙ
 @Entity(tableName = "categories")
 data class CategoryEntity(
-    @PrimaryKey val name: String, // Например "🍔 Еда"
+    @PrimaryKey val name: String,
     val type: TxType
+)
+
+// КЛАСС ЦЕЛИ (КОПИЛКА)
+@Entity(tableName = "goals")
+data class SavingsGoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val targetAmountMinor: Long,
+    val currentAmountMinor: Long = 0
 )
 
 @Dao
@@ -64,6 +72,9 @@ interface TxDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(tx: Tx)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(txs: List<Tx>) // ДЛЯ ИМПОРТА
 
     @Delete
     suspend fun delete(tx: Tx)
@@ -98,7 +109,6 @@ interface TxDao {
     @Delete
     suspend fun deleteRecurring(recurring: RecurringEntity)
 
-    // МЕТОДЫ ДЛЯ КАТЕГОРИЙ
     @Query("SELECT * FROM categories")
     fun observeCategories(): Flow<List<CategoryEntity>>
 
@@ -111,13 +121,23 @@ interface TxDao {
     @Query("DELETE FROM categories WHERE name = :name")
     suspend fun deleteCategory(name: String)
 
+    // МЕТОДЫ ДЛЯ КОПИЛКИ
+    @Query("SELECT * FROM goals")
+    fun observeGoals(): Flow<List<SavingsGoalEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGoal(goal: SavingsGoalEntity)
+
+    @Delete
+    suspend fun deleteGoal(goal: SavingsGoalEntity)
+
     @Query("DELETE FROM txs") suspend fun clearTxs()
     @Query("DELETE FROM cards") suspend fun clearCards()
     @Query("DELETE FROM budgets") suspend fun clearBudgets()
     @Query("DELETE FROM recurring") suspend fun clearRecurring()
 }
 
-@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class], version = 6, exportSchema = false)
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class], version = 8, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
 
