@@ -507,8 +507,12 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         card.last4 to (card.initialBalanceMinor + cardIncome - cardExpense - cardTransfer)
     }
 
-    LaunchedEffect(cardBalances) {
-        val total = cardBalances.values.sum()
+    // ИСПРАВЛЕНИЕ: Теперь виджет и общий баланс учитывают деньги в Копилке
+    LaunchedEffect(cardBalances, goals) {
+        val cardsTotal = cardBalances.values.sum()
+        val goalsTotal = goals.sumOf { it.currentAmountMinor }
+        val total = cardsTotal + goalsTotal
+        
         val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
         prefs.edit().putLong("total_balance", total).apply()
         val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
@@ -792,7 +796,7 @@ fun GoalManagerDialog(
     
     val t = { key: String -> Translations.t(key, lang) }
 
-    val currentDepositGoal = depositGoal // ИСПРАВЛЕНИЕ SMART CAST
+    val currentDepositGoal = depositGoal
 
     if (currentDepositGoal != null) {
         AlertDialog(
@@ -844,7 +848,6 @@ fun GoalManagerDialog(
                     if (goals.isEmpty()) Text(t("no_found"), color = Color.Gray)
                     
                     goals.forEach { goal ->
-                        // ИСПРАВЛЕНО ЗДЕСЬ (убран дубликат modifier)
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) { 
                                 Text(goal.name, fontWeight = FontWeight.Bold)
