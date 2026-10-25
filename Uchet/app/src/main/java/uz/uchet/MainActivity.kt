@@ -1095,4 +1095,64 @@ fun CardManagerDialog(cards: List<CardEntity>, cardBalances: Map<String, Long>, 
 
     if (editingCard != null) {
         val card = editingCard!!; val currentMathBalance = cardBalances[card.last4] ?: card.initialBalanceMinor
-        AlertDialog(onDismissRequest
+        AlertDialog(onDismissRequest = { editingCard = null }, title = { Text(card.name) },
+            text = { Column { Text("${currentMathBalance.money()} UZS", style = MaterialTheme.typography.bodyMedium); Spacer(Modifier.height(8.dp)); Text(t("amount") + ":", style = MaterialTheme.typography.bodyMedium); Spacer(Modifier.height(8.dp)); OutlinedTextField(value = actualBalanceInput, onValueChange = { actualBalanceInput = it }, label = { Text(t("amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { TextButton(onClick = { val actualMinor = runCatching { BigDecimal(actualBalanceInput.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull(); if (actualMinor != null) { onSave(card.copy(initialBalanceMinor = card.initialBalanceMinor + (actualMinor - currentMathBalance))); editingCard = null; actualBalanceInput = "" } }) { Text(t("save")) } },
+            dismissButton = { TextButton(onClick = { editingCard = null }) { Text(t("cancel")) } })
+    } else {
+        AlertDialog(onDismissRequest = onDismiss, title = { Text(t("my_accounts")) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(t("add") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(t("desc")) }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = last4, onValueChange = { last4 = it.uppercase() }, label = { Text(t("account")) }, modifier = Modifier.fillMaxWidth(), singleLine = true); Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = initialBalance, onValueChange = { initialBalance = it }, label = { Text(t("amount")) }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); Spacer(Modifier.height(8.dp))
+                Button(onClick = { val balanceMinor = runCatching { BigDecimal(initialBalance.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull() ?: 0L; if (name.isNotBlank() && last4.isNotBlank()) { onSave(CardEntity(last4 = last4, name = name, initialBalanceMinor = balanceMinor)); name = ""; last4 = ""; initialBalance = "" } }, modifier = Modifier.fillMaxWidth()) { Text(t("add")) }
+                Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+                Text(t("my_accounts") + ":", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp))
+                if (cards.isEmpty()) Text(t("no_found"), color = Color.Gray)
+                cards.forEach { c -> val currentBal = cardBalances[c.last4] ?: c.initialBalanceMinor
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(c.name, fontWeight = FontWeight.Bold); Text("${currentBal.money()} UZS", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }; IconButton(onClick = { editingCard = c; actualBalanceInput = BigDecimal(currentBal).movePointLeft(2).stripTrailingZeros().toPlainString() }) { Icon(Icons.Default.Edit, "Edit", tint = MaterialTheme.colorScheme.primary) }; IconButton({ onDelete(c.last4) }) { Icon(Icons.Default.Delete, "Delete", tint = RED) } }
+                }
+            } }, confirmButton = { TextButton(onClick = onDismiss) { Text(t("cancel")) } })
+    }
+}
+
+fun uriToBitmap(context: android.content.Context, uri: Uri): Bitmap? {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+        else MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+    } catch (e: Exception) { null }
+}
+
+data class ParsedSms(val amountStr: String, val card: String?, val description: String, val category: String)
+
+fun parseSmsText(text: String): ParsedSms? {
+    val lowerText = text.lowercase()
+    // Поиск суммы. Игнорируем "Баланс", "Кешбэк"
+    val lines = text.lines()
+    var amountStr: String? = null
+    for (line in lines) {
+        val lowerLine = line.lowercase()
+        if (lowerLine.contains("баланс") || lowerLine.contains("кешбэк") || lowerLine.contains("qoldiq")) continue
+        
+        val regex = Regex("""(-?[\d\s]+[.,]\d{2})""")
+        val match = regex.find(line)
+        if (match != null) { amountStr = match.groupValues[1].replace(" ", "").replace(",", "."); break }
+    }
+    if (amountStr == null) return null
+    if (amountStr!!.toBigDecimalOrNull() == null) return null
+    
+    val card = Regex("""(?:karta|карта|\*+|х)\s*\(?\*+(\d{4})\)?""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.take(4)
+    val description = text.take(50).replace("\n", " ").trim()
+    
+    val category = when {
+        lowerText.contains("магнит") || lowerText.contains("пятерочка") || lowerText.contains("еда") || lowerText.contains("кафе") || lowerText.contains("ресторан") || lowerText.contains("market") || lowerText.contains("jami") || lowerText.contains("atto") -> "🍔 Еда"
+        lowerText.contains("такси") || lowerText.contains("яндекс go") || lowerText.contains("бензин") || lowerText.contains("метро") || lowerText.contains("uzumbank") -> "🚕 Транспорт"
+        lowerText.contains("аптека") || lowerText.contains("клиника") -> "💊 Здоровье"
+        lowerText.contains("аренда") || lowerText.contains("квартплата") -> "🏠 Жилье"
+        lowerText.contains("зарплата") || lowerText.contains("аванс") || lowerText.contains("самозанятому") -> "💵 Зарплата"
+        lowerText.contains("перевод") || lowerText.contains("o'tkazma") -> "💸 Перевод"
+        else -> "📦 Другое"
+    }
+    return ParsedSms(amountStr, card, description, category)
+}
