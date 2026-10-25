@@ -10,7 +10,6 @@ import android.os.Build
 import android.provider.Telephony
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
-import java.math.BigDecimal
 
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,7 +19,7 @@ class SmsReceiver : BroadcastReceiver() {
             val sender = messages.firstOrNull()?.originatingAddress ?: ""
 
             val prefs = context.getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
-            val isDebugMode = prefs.getBoolean("sms_debug_mode", false) // Режим отладки
+            val isDebugMode = prefs.getBoolean("sms_debug_mode", false)
 
             val isBank = sender.contains("bank", true) || sender.contains("kapital", true) || 
                          sender.contains("uzum", true) || sender.contains("tez", true) || sender.length <= 6
