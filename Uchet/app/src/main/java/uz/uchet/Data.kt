@@ -1,7 +1,12 @@
 package uz.uchet
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import android.content.Context
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+// ==========================================
+// 1. СУЩНОСТИ (ENTITIES)
+// ==========================================
 
 enum class TxType(val label: String) {
     INCOME("Доход"),
@@ -16,7 +21,7 @@ data class Tx(
     val amountMinor: Long,
     val type: TxType,
     val cardId: String? = null,
-    val toCardId: String? = null, // Добавлено для переводов между картами
+    val toCardId: String? = null,
     val description: String = "",
     val category: String = "",
     val timestamp: Long,
@@ -71,3 +76,144 @@ data class ExchangeRateEntity(
     @PrimaryKey val currency: String,
     val rateToUzs: Double
 )
+
+
+// ==========================================
+// 2. ИНТЕРФЕЙС ДЛЯ РАБОТЫ С БД (DAO)
+// ==========================================
+
+@Dao
+interface Dao {
+    // Транзакции
+    @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
+    fun observe(start: Long, end: Long): Flow<List<Tx>>
+
+    @Query("SELECT * FROM txs ORDER BY timestamp DESC")
+    fun observeAll(): Flow<List<Tx>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(tx: Tx)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(txs: List<Tx>)
+
+    @Delete
+    suspend fun delete(tx: Tx)
+
+    // Карты
+    @Query("SELECT * FROM cards")
+    fun observeCards(): Flow<List<CardEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCard(card: CardEntity)
+
+    @Query("DELETE FROM cards WHERE id = :id")
+    suspend fun deleteCard(id: String)
+
+    // Бюджеты
+    @Query("SELECT * FROM budgets")
+    fun observeBudgets(): Flow<List<BudgetEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBudget(budget: BudgetEntity)
+
+    @Query("DELETE FROM budgets WHERE category = :category")
+    suspend fun deleteBudget(category: String)
+
+    // Регулярные операции
+    @Query("SELECT * FROM recurring")
+    fun observeRecurring(): Flow<List<RecurringEntity>>
+
+    @Query("SELECT * FROM recurring")
+    suspend fun getRecurringList(): List<RecurringEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRecurring(r: RecurringEntity)
+
+    @Delete
+    suspend fun deleteRecurring(r: RecurringEntity)
+
+    // Категории
+    @Query("SELECT * FROM categories")
+    fun observeCategories(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories")
+    suspend fun getCategoriesList(): List<CategoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCategory(c: CategoryEntity)
+
+    @Query("DELETE FROM categories WHERE name = :name")
+    suspend fun deleteCategory(name: String)
+
+    // Копилка
+    @Query("SELECT * FROM goals")
+    fun observeGoals(): Flow<List<SavingsGoalEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGoal(goal: SavingsGoalEntity)
+
+    @Delete
+    suspend fun deleteGoal(goal: SavingsGoalEntity)
+
+    // Курсы валют
+    @Query("SELECT * FROM rates")
+    fun observeRates(): Flow<List<ExchangeRateEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRate(rate: ExchangeRateEntity)
+
+    // Очистка для восстановления бэкапа
+    @Query("DELETE FROM txs")
+    suspend fun clearTxs()
+
+    @Query("DELETE FROM cards")
+    suspend fun clearCards()
+
+    @Query("DELETE FROM budgets")
+    suspend fun clearBudgets()
+
+    @Query("DELETE FROM recurring")
+    suspend fun clearRecurring()
+}
+
+
+// ==========================================
+// 3. САМА БАЗА ДАННЫХ (APP DB)
+// ==========================================
+
+@Database(
+    entities = [
+        Tx::class, 
+        CardEntity::class, 
+        BudgetEntity::class, 
+        RecurringEntity::class, 
+        CategoryEntity::class, 
+        SavingsGoalEntity::class, 
+        ExchangeRateEntity::class
+    ],
+    version = 2,
+    exportSchema = false
+)
+abstract class AppDb : RoomDatabase() {
+    abstract fun dao(): Dao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDb? = null
+
+        fun get(context: Context): AppDb {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDb::class.java,
+                    "uchet_database"
+                )
+                .fallbackToDestructiveMigration() // Автоматически обновит БД при изменении структуры
+                .build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
