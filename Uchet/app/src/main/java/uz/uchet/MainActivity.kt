@@ -42,6 +42,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -69,11 +71,23 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-private val MONTH_FMT = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
 private val GREEN = Color(0xFF2E7D32)
 private val RED = Color(0xFFC62828)
 private val YELLOW = Color(0xFFF9A825)
 private val BLUE = Color(0xFF1976D2)
+
+// ФУНКЦИЯ ДЛЯ ПЕРЕВОДА МЕСЯЦЕВ
+fun getMonthFormatter(lang: AppLanguage): DateTimeFormatter {
+    val locale = when(lang) {
+        AppLanguage.RU -> Locale("ru")
+        AppLanguage.UZ -> Locale("uz")
+        AppLanguage.EN -> Locale("en")
+        AppLanguage.TG -> Locale("tg")
+        AppLanguage.KAA -> Locale("kaa")
+        AppLanguage.KK -> Locale("kk")
+    }
+    return DateTimeFormatter.ofPattern("LLLL yyyy", locale)
+}
 
 val DEFAULT_EXPENSE_CATEGORIES = listOf("🍔 Еда", "🚕 Транспорт", "🏠 Жилье", "🛒 Покупки", "💊 Здоровье", "🎉 Развлечения", "📦 Другое")
 val DEFAULT_INCOME_CATEGORIES = listOf("💵 Зарплата", "🎁 Подарок", "💸 Перевод", "📈 Инвестиции", "📦 Другое")
@@ -507,7 +521,6 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         card.last4 to (card.initialBalanceMinor + cardIncome - cardExpense - cardTransfer)
     }
 
-    // ИСПРАВЛЕНИЕ: Теперь виджет и общий баланс учитывают деньги в Копилке
     LaunchedEffect(cardBalances, goals) {
         val cardsTotal = cardBalances.values.sum()
         val goalsTotal = goals.sumOf { it.currentAmountMinor }
@@ -556,13 +569,24 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Row(verticalAlignment = Alignment.CenterVertically) { IconButton({ vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, t("cancel")) }; Text(month.format(MONTH_FMT).replaceFirstChar { it.uppercase() }); IconButton({ vm.shift(1) }) { Icon(Icons.Default.ChevronRight, t("add")) } } },
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { vm.shift(-1) }) { Icon(Icons.Default.ChevronLeft, "Prev") }
+                        Text(
+                            text = month.format(getMonthFormatter(currentLang.value)).replaceFirstChar { it.uppercase() },
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        IconButton(onClick = { vm.shift(1) }) { Icon(Icons.Default.ChevronRight, "Next") }
+                    }
+                },
                 actions = {
-                    IconButton(onClick = { showGoalManager = true }) { Icon(Icons.Default.Savings, t("goals")) }
-                    IconButton(onClick = { showCategoryManager = true }) { Icon(Icons.Default.Category, t("categories")) }
-                    IconButton(onClick = { showRecurringManager = true }) { Icon(Icons.Default.Autorenew, t("recurring")) }
-                    IconButton(onClick = { showBudgetManager = true }) { Icon(Icons.Default.AccountBalanceWallet, t("budgets")) }
-                    IconButton(onClick = { showCardManager = true }) { Icon(Icons.Default.CreditCard, t("my_accounts")) }
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -590,6 +614,37 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
                     FilterChip(selected = filterType == TxType.INCOME, onClick = { filterType = TxType.INCOME }, label = { Text(t("income")) })
                     FilterChip(selected = filterType == TxType.EXPENSE, onClick = { filterType = TxType.EXPENSE }, label = { Text(t("expense")) })
                 }
+                
+                Spacer(Modifier.height(12.dp))
+                
+                // НОВЫЙ БЛОК С ИКОНКАМИ
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showGoalManager = true }.padding(8.dp)) {
+                        Icon(Icons.Default.Savings, contentDescription = t("goals"), tint = MaterialTheme.colorScheme.primary)
+                        Text(t("goals"), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showCategoryManager = true }.padding(8.dp)) {
+                        Icon(Icons.Default.Category, contentDescription = t("categories"), tint = MaterialTheme.colorScheme.primary)
+                        Text(t("categories"), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showRecurringManager = true }.padding(8.dp)) {
+                        Icon(Icons.Default.Autorenew, contentDescription = t("recurring"), tint = MaterialTheme.colorScheme.primary)
+                        Text(t("recurring"), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showBudgetManager = true }.padding(8.dp)) {
+                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = t("budgets"), tint = MaterialTheme.colorScheme.primary)
+                        Text(t("budgets"), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showCardManager = true }.padding(8.dp)) {
+                        Icon(Icons.Default.CreditCard, contentDescription = t("my_accounts"), tint = MaterialTheme.colorScheme.primary)
+                        Text(t("my_accounts"), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                
                 Spacer(Modifier.height(16.dp))
             }
 
