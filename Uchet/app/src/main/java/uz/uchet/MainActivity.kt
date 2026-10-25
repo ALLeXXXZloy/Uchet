@@ -53,6 +53,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -91,9 +94,10 @@ object Translations {
             "sms_title" to "Проверьте операцию из СМС", "sms_data" to "Данные из СМС", "confirm" to "Подтвердить", "reject" to "Отклонить", "pin" to "PIN-код",
             "wrong_pin" to "Неверный PIN-код", "no_found" to "Ничего не найдено", "limit" to "Лимит", "day" to "День месяца (1-31)", "set_limit" to "Сохранить лимит",
             "add_cat" to "Добавить категорию", "add_temp" to "Добавить шаблон", "sys" to "Системная", "light" to "Светлая", "dark" to "Темная",
-            "cash" to "Наличные", "card" to "Карта", "upload_sms" to "Загрузить скриншот СМС",
+            "cash" to "Наличные", "card" to "Карта", "upload_sms" to "Загрузить СМС или чек",
             "goals" to "Копилка (Цели)", "add_goal" to "Добавить цель", "goal_name" to "Название цели", "target_amount" to "Целевая сумма",
-            "deposit" to "Пополнить", "deposit_amount" to "Сумма пополнения", "source_card" to "Списать с карты", "completed" to "Достигнуто!"
+            "deposit" to "Пополнить", "deposit_amount" to "Сумма пополнения", "source_card" to "Списать с карты", "completed" to "Достигнуто!",
+            "import_csv" to "Импорт из CSV", "import_pdf" to "Импорт из PDF", "import_confirm" to "Найдено транзакций: "
         ),
         "uz" to mapOf(
             "my_accounts" to "Mening hisoblarim", "exp_by_cat" to "Kategoriyalar bo'yicha xarajatlar", "daily_chart" to "Xarajatlar dinamikasi (kunlik)", "monthly_chart" to "Xarajatlar (oylik)",
@@ -106,9 +110,10 @@ object Translations {
             "sms_title" to "SMS operatsiyasini tekshiring", "sms_data" to "SMS ma'lumotlari", "confirm" to "Tasdiqlash", "reject" to "Rad etish", "pin" to "PIN kod",
             "wrong_pin" to "Noto'g'ri PIN kod", "no_found" to "Hech narsa topilmadi", "limit" to "Limit", "day" to "Oy kuni (1-31)", "set_limit" to "Limitni saqlash",
             "add_cat" to "Kategoriya qo'shish", "add_temp" to "Shablon qo'shish", "sys" to "Tizim", "light" to "Yorug'", "dark" to "Qorong'i",
-            "cash" to "Naqd", "card" to "Karta", "upload_sms" to "SMS skrinshotini yuklash",
+            "cash" to "Naqd", "card" to "Karta", "upload_sms" to "SMS yoki chekni yuklash",
             "goals" to "Jamg'arma (Maqsadlar)", "add_goal" to "Maqsad qo'shish", "goal_name" to "Maqsad nomi", "target_amount" to "Maqsad summasi",
-            "deposit" to "To'ldirish", "deposit_amount" to "To'ldirish summasi", "source_card" to "Kartadan yechish", "completed" to "Erishildi!"
+            "deposit" to "To'ldirish", "deposit_amount" to "To'ldirish summasi", "source_card" to "Kartadan yechish", "completed" to "Erishildi!",
+            "import_csv" to "CSV dan import", "import_pdf" to "PDF dan import", "import_confirm" to "Topilgan operatsiyalar: "
         ),
         "en" to mapOf(
             "my_accounts" to "My Accounts", "exp_by_cat" to "Expenses by Category", "daily_chart" to "Daily Expense Dynamics", "monthly_chart" to "Monthly Expenses (Year)",
@@ -121,9 +126,10 @@ object Translations {
             "sms_title" to "Check SMS Transaction", "sms_data" to "SMS Data", "confirm" to "Confirm", "reject" to "Reject", "pin" to "PIN Code",
             "wrong_pin" to "Wrong PIN Code", "no_found" to "Nothing found", "limit" to "Limit", "day" to "Day of month (1-31)", "set_limit" to "Save Limit",
             "add_cat" to "Add Category", "add_temp" to "Add Template", "sys" to "System", "light" to "Light", "dark" to "Dark",
-            "cash" to "Cash", "card" to "Card", "upload_sms" to "Upload SMS Screenshot",
+            "cash" to "Cash", "card" to "Card", "upload_sms" to "Upload SMS or Receipt",
             "goals" to "Savings Goals", "add_goal" to "Add Goal", "goal_name" to "Goal Name", "target_amount" to "Target Amount",
-            "deposit" to "Deposit", "deposit_amount" to "Deposit Amount", "source_card" to "Source Account", "completed" to "Completed!"
+            "deposit" to "Deposit", "deposit_amount" to "Deposit Amount", "source_card" to "Source Account", "completed" to "Completed!",
+            "import_csv" to "Import from CSV", "import_pdf" to "Import from PDF", "import_confirm" to "Found transactions: "
         ),
         "tg" to mapOf(
             "my_accounts" to "Ҳисобҳои ман", "exp_by_cat" to "Хароҷот аз рӯи категорияҳо", "daily_chart" to "Динамикаи хароҷот (рӯзона)", "monthly_chart" to "Хароҷот аз рӯи моҳҳо",
@@ -136,9 +142,10 @@ object Translations {
             "sms_title" to "Амалиётро аз SMS тафтиш кунед", "sms_data" to "Маълумот аз SMS", "confirm" to "Тасдиқ кардан", "reject" to "Рад кардан", "pin" to "PIN-код",
             "wrong_pin" to "PIN-коди нодуруст", "no_found" to "Ҳеҷ чиз ёфт нашуд", "limit" to "Ҳудуд", "day" to "Рӯзи моҳ (1-31)", "set_limit" to "Нигоҳ доштани ҳудуд",
             "add_cat" to "Иловаи категория", "add_temp" to "Иловаи қолаб", "sys" to "Системавӣ", "light" to "Равшан", "dark" to "Торик",
-            "cash" to "Нақдӣ", "card" to "Корт", "upload_sms" to "Боркунии скриншоти SMS",
+            "cash" to "Нақдӣ", "card" to "Корт", "upload_sms" to "Боркунии SMS ё чек",
             "goals" to "Хазина (Мақсадҳо)", "add_goal" to "Иловаи мақсад", "goal_name" to "Номи мақсад", "target_amount" to "Маблағи мақсад",
-            "deposit" to "Пур кардан", "deposit_amount" to "Маблағи пуркунӣ", "source_card" to "Аз корт гирифтан", "completed" to "Иҷро шуд!"
+            "deposit" to "Пур кардан", "deposit_amount" to "Маблағи пуркунӣ", "source_card" to "Аз корт гирифтан", "completed" to "Иҷро шуд!",
+            "import_csv" to "Импорт аз CSV", "import_pdf" to "Импорт аз PDF", "import_confirm" to "Амалиётҳои ёфтшуда: "
         ),
         "kaa" to mapOf(
             "my_accounts" to "Meniń esap-layıqlarım", "exp_by_cat" to "Kategoriyalar boyınsha shıǵınlar", "daily_chart" to "Shıǵınlar dinamikası (kúnlik)", "monthly_chart" to "Shıǵınlar (aylıq)",
@@ -151,9 +158,10 @@ object Translations {
             "sms_title" to "SMS operaciyasın tekseriń", "sms_data" to "SMS maǵlıwmatları", "confirm" to "Tastıyıqlaw", "reject" to "Biykaralaw", "pin" to "PIN kod",
             "wrong_pin" to "Nádurıs PIN kod", "no_found" to "Hesh nárse tabılmadı", "limit" to "Limit", "day" to "Ay kúni (1-31)", "set_limit" to "Limitti saqlaw",
             "add_cat" to "Kategoriya qosıw", "add_temp" to "Shablon qosıw", "sys" to "Sistema", "light" to "Jaqtı", "dark" to "Qarańǵı",
-            "cash" to "Naq pul", "card" to "Karta", "upload_sms" to "SMS skrinshotın júklew",
+            "cash" to "Naq pul", "card" to "Karta", "upload_sms" to "SMS yamasa chek júklew",
             "goals" to "Jıynaǵısh (Máksler)", "add_goal" to "Mákset qosıw", "goal_name" to "Mákset atı", "target_amount" to "Mákset summası",
-            "deposit" to "Toltırıw", "deposit_amount" to "Toltırıw summası", "source_card" to "Kartadan alıw", "completed" to "Orınlandı!"
+            "deposit" to "Toltırıw", "deposit_amount" to "Toltırıw summası", "source_card" to "Kartadan alıw", "completed" to "Orınlandı!",
+            "import_csv" to "CSV dan import", "import_pdf" to "PDF dan import", "import_confirm" to "Tabılǵan operaciyalar: "
         ),
         "kk" to mapOf(
             "my_accounts" to "Менің шоттарым", "exp_by_cat" to "Санаттар бойынша шығыстар", "daily_chart" to "Шығыстар динамикасы (күнделікті)", "monthly_chart" to "Шығыстар (айлық)",
@@ -166,9 +174,10 @@ object Translations {
             "sms_title" to "SMS операциясын тексеріңіз", "sms_data" to "SMS деректері", "confirm" to "Растау", "reject" to "Қабылдамау", "pin" to "PIN-код",
             "wrong_pin" to "Қате PIN-код", "no_found" to "Ештеңе табылмады", "limit" to "Лимит", "day" to "Ай күні (1-31)", "set_limit" to "Лимитті сақтау",
             "add_cat" to "Санат қосу", "add_temp" to "Үлгі қосу", "sys" to "Жүйелік", "light" to "Ашық", "dark" to "Қараңғы",
-            "cash" to "Қолма-қол", "card" to "Карта", "upload_sms" to "SMS скриншотын жүктеу",
+            "cash" to "Қолма-қол", "card" to "Карта", "upload_sms" to "SMS немесе чекті жүктеу",
             "goals" to "Жинақ (Мақсаттар)", "add_goal" to "Мақсат қосу", "goal_name" to "Мақсат атауы", "target_amount" to "Мақсат сомасы",
-            "deposit" to "Толықтыру", "deposit_amount" to "Толықтыру сомасы", "source_card" to "Картадан алу", "completed" to "Орындалды!"
+            "deposit" to "Толықтыру", "deposit_amount" to "Толықтыру сомасы", "source_card" to "Картадан алу", "completed" to "Орындалды!",
+            "import_csv" to "CSV-тен импорт", "import_pdf" to "PDF-тен импорт", "import_confirm" to "Табылған операциялар: "
         )
     )
 
@@ -252,6 +261,7 @@ class VM(app: Application) : AndroidViewModel(app) {
     }
 
     fun save(t: Tx) { viewModelScope.launch { dao.upsert(t) } }
+    fun bulkSave(txs: List<Tx>) { viewModelScope.launch { dao.insertAll(txs) } }
     fun delete(t: Tx) { viewModelScope.launch { dao.delete(t) } }
     fun shift(n: Long) { month.value = month.value.plusMonths(n) }
     fun saveCard(card: CardEntity) { viewModelScope.launch { dao.upsertCard(card) } }
@@ -322,6 +332,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PDFBoxResourceLoader.init(applicationContext)
         val prefs = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
         currentTheme.value = try { AppTheme.valueOf(prefs.getString("app_theme", "SYSTEM") ?: "SYSTEM") } catch (e: Exception) { AppTheme.SYSTEM }
         currentLang.value = try { AppLanguage.valueOf(prefs.getString("app_lang", "RU") ?: "RU") } catch (e: Exception) { AppLanguage.RU }
@@ -412,6 +423,9 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf("") }
 
+    var importedTxs by remember { mutableStateOf<List<Tx>?>(null) }
+    var showImportConfirm by remember { mutableStateOf(false) }
+
     var searchQuery by remember { mutableStateOf("") }
     var filterType by remember { mutableStateOf<TxType?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -459,6 +473,26 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         uri?.let { try { context.contentResolver.openInputStream(it)?.use { stream -> pendingRestoreJson = stream.bufferedReader().readText(); showRestoreConfirm = true } } catch (e: Exception) { scope.launch { snackbarHostState.showSnackbar("Error") } } }
     }
 
+    val fileImportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                try {
+                    val mimeType = context.contentResolver.getType(it) ?: ""
+                    val text = if (mimeType == "application/pdf") extractTextFromPdf(context, it) else context.contentResolver.openInputStream(it)?.bufferedReader()?.readText() ?: ""
+                    val parsedTxs = parseImportedFile(text)
+                    if (parsedTxs.isNotEmpty()) {
+                        importedTxs = parsedTxs
+                        showImportConfirm = true
+                    } else {
+                        snackbarHostState.showSnackbar("Не найдено транзакций в файле")
+                    }
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("Ошибка чтения файла: ${e.message}")
+                }
+            }
+        }
+    }
+
     val income = txs.filter { it.type == TxType.INCOME }.sumOf { it.amountMinor }
     val expense = txs.filter { it.type == TxType.EXPENSE }.sumOf { it.amountMinor }
     val zone = ZoneId.systemDefault()
@@ -486,6 +520,17 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
         AlertDialog(onDismissRequest = { showRestoreConfirm = false }, title = { Text(t("restore")) }, text = { Text(t("restore") + "?") },
             confirmButton = { TextButton(onClick = { vm.restoreBackup(pendingRestoreJson) { success -> if (success) scope.launch { snackbarHostState.showSnackbar("OK!") } else scope.launch { snackbarHostState.showSnackbar("Error") } }; showRestoreConfirm = false }) { Text(t("confirm"), color = RED) } },
             dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text(t("cancel")) } })
+    }
+
+    if (showImportConfirm && importedTxs != null) {
+        AlertDialog(onDismissRequest = { showImportConfirm = false; importedTxs = null }, title = { Text("Импорт данных") }, 
+            text = { Text("${t("import_confirm")} ${importedTxs!!.size}") },
+            confirmButton = { TextButton(onClick = { 
+                vm.bulkSave(importedTxs!!)
+                scope.launch { snackbarHostState.showSnackbar("Импортировано: ${importedTxs!!.size}") }
+                showImportConfirm = false; importedTxs = null 
+            }) { Text(t("confirm"), color = GREEN) } },
+            dismissButton = { TextButton(onClick = { showImportConfirm = false; importedTxs = null }) { Text(t("cancel")) } })
     }
 
     if (showSettings) SettingsDialog(context, onDismiss = { showSettings = false }, snackbarHostState, scope, currentTheme, currentLang)
@@ -517,6 +562,9 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(text = { Text(t("import_csv")) }, leadingIcon = { Icon(Icons.Default.FileDownload, null) }, onClick = { showMenu = false; fileImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/csv")) })
+                            DropdownMenuItem(text = { Text(t("import_pdf")) }, leadingIcon = { Icon(Icons.Default.PictureAsPdf, null) }, onClick = { showMenu = false; fileImportLauncher.launch(arrayOf("application/pdf")) })
+                            HorizontalDivider()
                             DropdownMenuItem(text = { Text(t("export")) }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { showMenu = false; csvExportLauncher.launch("uchet_export.csv") })
                             DropdownMenuItem(text = { Text(t("backup")) }, leadingIcon = { Icon(Icons.Default.Backup, null) }, onClick = { showMenu = false; jsonExportLauncher.launch("uchet_backup.json") })
                             DropdownMenuItem(text = { Text(t("restore")) }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { showMenu = false; jsonImportLauncher.launch(arrayOf("application/json")) })
@@ -665,7 +713,64 @@ fun App(vm: VM = viewModel(), pendingCheckTrigger: MutableState<Int>? = null, cu
 
     if (showCardManager) CardManagerDialog(cards, cardBalances, allTxs, { vm.saveCard(it) }, { vm.deleteCard(it) }, currentLang.value, { showCardManager = false })
     if (showBudgetManager) BudgetManagerDialog(budgets, expenseCategories, { vm.saveBudget(it) }, { vm.deleteBudget(it) }, currentLang.value, { showBudgetManager = false })
-    if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, currentLang.value, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false }) // ИСПРАВЛЕНО ЗДЕСЬ
+    if (showRecurringManager) RecurringManagerDialog(recurring, cards, expenseCategories, incomeCategories, currentLang.value, { vm.saveRecurring(it) }, { vm.deleteRecurring(it) }, { showRecurringManager = false })
+}
+
+fun extractTextFromPdf(context: Context, uri: Uri): String {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            val doc = PDDocument.load(inputStream)
+            val stripper = PDFTextStripper()
+            val text = stripper.getText(doc)
+            doc.close()
+            text
+        } ?: ""
+    } catch (e: Exception) {
+        e.printStackTrace()
+        ""
+    }
+}
+
+fun parseImportedFile(text: String): List<Tx> {
+    val result = mutableListOf<Tx>()
+    val lines = text.lines()
+    val dateRegex = Regex("""(\d{2}[./]\d{2}[./]\d{4}|\d{4}-\d{2}-\d{2})""")
+    val amountRegex = Regex("""(-?\d[\d\s]*[.,]?\d{0,2})\s*(?:uzs|сум|rub|руб|\$|€)?$""", RegexOption.IGNORE_CASE)
+
+    for (line in lines) {
+        if (line.isBlank()) continue
+        val dateMatch = dateRegex.find(line)
+        val amountMatch = amountRegex.find(line.trim())
+        
+        if (dateMatch != null && amountMatch != null) {
+            val dateStr = dateMatch.value.replace(".", "-").replace("/", "-")
+            val cleanAmountStr = amountMatch.groupValues[1].replace(" ", "").replace(",", ".")
+            val amountDouble = cleanAmountStr.toDoubleOrNull() ?: continue
+            val isIncome = !line.contains("-") && amountDouble > 0 && (line.contains("пополнение", true) || line.contains("зачисление", true) || line.contains("income", true))
+            
+            val amountMinor = kotlin.math.abs(amountDouble).toBigDecimal().movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+            if (amountMinor <= 0) continue
+
+            val timestamp = try {
+                val parts = dateStr.split("-")
+                val (year, month, day) = if (parts[0].length == 4) Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt()) else Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
+                LocalDate.of(year, month, day).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            } catch (e: Exception) { System.currentTimeMillis() }
+
+            val description = line.replace(dateMatch.value, "").replace(amountMatch.value, "").trim().replace("\\s+".toRegex(), " ").take(40)
+            val category = if (isIncome) "💵 Зарплата" else "📦 Другое"
+
+            result.add(Tx(
+                amountMinor = amountMinor,
+                type = if (isIncome) TxType.INCOME else TxType.EXPENSE,
+                description = description.ifBlank { "Импорт" },
+                category = category,
+                timestamp = timestamp,
+                source = "IMPORT"
+            ))
+        }
+    }
+    return result
 }
 
 @Composable
@@ -687,10 +792,12 @@ fun GoalManagerDialog(
     
     val t = { key: String -> Translations.t(key, lang) }
 
-    if (depositGoal != null) {
+    val currentDepositGoal = depositGoal // ИСПРАВЛЕНИЕ SMART CAST
+
+    if (currentDepositGoal != null) {
         AlertDialog(
             onDismissRequest = { depositGoal = null },
-            title = { Text("${t("deposit")}: ${depositGoal!!.name}") },
+            title = { Text("${t("deposit")}: ${currentDepositGoal.name}") },
             text = {
                 Column {
                     OutlinedTextField(value = depositAmount, onValueChange = { depositAmount = it }, label = { Text(t("deposit_amount")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
@@ -706,7 +813,7 @@ fun GoalManagerDialog(
                 TextButton(onClick = {
                     val amountMinor = runCatching { BigDecimal(depositAmount.replace(" ", "").replace(',', '.')).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }.getOrNull()
                     if (amountMinor != null && amountMinor > 0) {
-                        onDeposit(depositGoal!!, depositCard, amountMinor)
+                        onDeposit(currentDepositGoal, depositCard, amountMinor)
                         depositGoal = null; depositAmount = ""
                     }
                 }) { Text(t("deposit")) }
@@ -912,7 +1019,7 @@ fun generateCsv(transactions: List<Tx>): String {
     transactions.sortedBy { it.timestamp }.forEach { t ->
         val dt = Instant.ofEpochMilli(t.timestamp).atZone(zone)
         val amount = BigDecimal(t.amountMinor).movePointLeft(2).setScale(2, RoundingMode.HALF_UP).toPlainString()
-        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else if (t.source == "SMS") "СМС" else if (t.source == "SAVINGS") "Копилка" else "Вручную"}\n")
+        sb.append("${dt.format(DATE_FMT)},${dt.format(DateTimeFormatter.ofPattern("HH:mm"))},${t.type.label},$amount,${t.category.replace(",", " ")},${t.description.replace(",", " ").replace("\n", " ")},${if (t.cardLast4.isNullOrEmpty()) "Наличные" else "Карта *${t.cardLast4}"},${if (t.source == "AUTO") "Авто" else if (t.source == "SMS") "СМС" else if (t.source == "SAVINGS") "Копилка" else if (t.source == "IMPORT") "Импорт" else "Вручную"}\n")
     }
     return sb.toString()
 }
@@ -956,7 +1063,7 @@ fun TxRow(t: Tx, lang: AppLanguage, onClick: () -> Unit) {
     val (sign, color) = when (t.type) { TxType.INCOME -> "+" to GREEN; TxType.EXPENSE -> "−" to RED; TxType.TRANSFER -> "→" to BLUE }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            val icon = when (t.source) { "AUTO" -> "🔄 "; "SMS" -> "✉️ "; "SAVINGS" -> "🏦 "; else -> "" }
+            val icon = when (t.source) { "AUTO" -> "🔄 "; "SMS" -> "✉️ "; "SAVINGS" -> "🏦 "; "IMPORT" -> "📥 "; else -> "" }
             Text("$icon${Translations.translateCategory(t.category, lang)}  ${t.description}".trim(), maxLines = 2)
             val time = Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
             val cardText = if (t.cardLast4.isNullOrEmpty()) Translations.t("cash", lang) else "*${t.cardLast4}"
@@ -1171,13 +1278,20 @@ data class ParsedSms(val amountStr: String, val card: String?, val description: 
 
 fun parseSmsText(text: String): ParsedSms? {
     val lowerText = text.lowercase()
+    val totalRegex = Regex("""(?:итого|сумма|total|жами)[\s:]*([\d\s]+(?:[.,]\d{1,2})?)\s*(?:uzs|сум|rub|руб|\$|€)?""", RegexOption.IGNORE_CASE)
     val amountRegex = Regex("""([\d\s]+(?:[.,]\d{1,2})?)\s*(?:uzs|сум|rub|руб|\$|€)""", RegexOption.IGNORE_CASE)
-    val amountStr = amountRegex.find(text)?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".") ?: return null
-    if (amountStr.toBigDecimalOrNull() == null) return null
+    
+    var amountStr = totalRegex.find(text)?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".")
+    if (amountStr == null) {
+        amountStr = amountRegex.find(text)?.groupValues?.get(1)?.replace(" ", "")?.replace(",", ".")
+    }
+    
+    if (amountStr == null || amountStr.toBigDecimalOrNull() == null) return null
+    
     val card = Regex("""(?:карта|card|\*|х)\s*(\d{4})""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.take(4)
     val description = text.take(40).replace("\n", " ").trim()
     val category = when {
-        lowerText.contains("магнит") || lowerText.contains("пятерочка") || lowerText.contains("еда") || lowerText.contains("кафе") || lowerText.contains("ресторан") -> "🍔 Еда"
+        lowerText.contains("магнит") || lowerText.contains("пятерочка") || lowerText.contains("еда") || lowerText.contains("кафе") || lowerText.contains("ресторан") || lowerText.contains("market") -> "🍔 Еда"
         lowerText.contains("такси") || lowerText.contains("яндекс go") || lowerText.contains("бензин") || lowerText.contains("метро") -> "🚕 Транспорт"
         lowerText.contains("аптека") || lowerText.contains("клиника") -> "💊 Здоровье"
         lowerText.contains("аренда") || lowerText.contains("квартплата") -> "🏠 Жилье"
