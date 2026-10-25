@@ -20,9 +20,7 @@ class SmsReceiver : BroadcastReceiver() {
 
             val prefs = context.getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
             val isDebugMode = prefs.getBoolean("sms_debug_mode", false)
-
-            val isBank = sender.contains("bank", true) || sender.contains("kapital", true) || 
-                         sender.contains("uzum", true) || sender.contains("tez", true) || sender.length <= 6
+            val isBank = sender.contains("bank", true) || sender.contains("kapital", true) || sender.contains("uzum", true) || sender.contains("tez", true) || sender.length <= 6
                          
             if ((isBank || isDebugMode) && fullText.isNotEmpty()) {
                 val parsed = parseAutoSms(fullText)
