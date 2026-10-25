@@ -4,132 +4,89 @@ import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
-enum class TxType(val label: String) {
-    INCOME("Доход"),
-    EXPENSE("Расход"),
-    TRANSFER("Перевод")
-}
+enum class TxType(val label: String) { INCOME("Доход"), EXPENSE("Расход"), TRANSFER("Перевод") }
 
 @Entity(tableName = "txs")
 data class Tx(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val amountMinor: Long,
-    val type: TxType,
+    val amountMinor: Long, 
+    val type: TxType, 
     val cardLast4: String? = null,
-    val description: String = "",
+    val description: String = "", 
     val category: String = "📦 Другое",
-    val timestamp: Long,
-    val source: String = "MANUAL"
+    val timestamp: Long, 
+    val source: String = "MANUAL",
+    val currency: String = "UZS", // НОВОЕ
+    val photoPath: String? = null // НОВОЕ
 )
 
 @Entity(tableName = "cards")
 data class CardEntity(
-    @PrimaryKey val last4: String,
-    val name: String,
+    @PrimaryKey val last4: String, 
+    val name: String, 
     val initialBalanceMinor: Long
 )
 
 @Entity(tableName = "budgets")
-data class BudgetEntity(
-    @PrimaryKey val category: String,
-    val limitMinor: Long
-)
+data class BudgetEntity(@PrimaryKey val category: String, val limitMinor: Long)
 
 @Entity(tableName = "recurring")
 data class RecurringEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val amountMinor: Long,
-    val type: TxType,
-    val cardLast4: String? = null,
-    val description: String = "",
-    val category: String = "📦 Другое",
-    val dayOfMonth: Int,
-    val lastExecutedMonth: String = ""
+    val amountMinor: Long, val type: TxType, val cardLast4: String? = null,
+    val description: String = "", val category: String = "📦 Другое",
+    val dayOfMonth: Int, val lastExecutedMonth: String = ""
 )
 
 @Entity(tableName = "categories")
-data class CategoryEntity(
-    @PrimaryKey val name: String,
-    val type: TxType
-)
+data class CategoryEntity(@PrimaryKey val name: String, val type: TxType)
 
-// КЛАСС ЦЕЛИ (КОПИЛКА)
 @Entity(tableName = "goals")
 data class SavingsGoalEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val targetAmountMinor: Long,
-    val currentAmountMinor: Long = 0
+    val name: String, val targetAmountMinor: Long, val currentAmountMinor: Long = 0
+)
+
+// НОВАЯ ТАБЛИЦА ДЛЯ КУРСОВ ВАЛЮТ
+@Entity(tableName = "exchange_rates")
+data class ExchangeRateEntity(
+    @PrimaryKey val currency: String, // USD, EUR, RUB
+    val rateToUzs: Double
 )
 
 @Dao
 interface TxDao {
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
     fun observe(start: Long, end: Long): Flow<List<Tx>>
+    @Query("SELECT * FROM txs") fun observeAll(): Flow<List<Tx>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(tx: Tx)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertAll(txs: List<Tx>)
+    @Delete suspend fun delete(tx: Tx)
 
-    @Query("SELECT * FROM txs")
-    fun observeAll(): Flow<List<Tx>>
+    @Query("SELECT * FROM cards") fun observeCards(): Flow<List<CardEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCard(card: CardEntity)
+    @Query("DELETE FROM cards WHERE last4 = :last4") suspend fun deleteCard(last4: String)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(tx: Tx)
+    @Query("SELECT * FROM budgets") fun observeBudgets(): Flow<List<BudgetEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertBudget(budget: BudgetEntity)
+    @Query("DELETE FROM budgets WHERE category = :category") suspend fun deleteBudget(category: String)
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertAll(txs: List<Tx>) // ДЛЯ ИМПОРТА
+    @Query("SELECT * FROM recurring") fun observeRecurring(): Flow<List<RecurringEntity>>
+    @Query("SELECT * FROM recurring") suspend fun getRecurringList(): List<RecurringEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertRecurring(recurring: RecurringEntity)
+    @Delete suspend fun deleteRecurring(recurring: RecurringEntity)
 
-    @Delete
-    suspend fun delete(tx: Tx)
+    @Query("SELECT * FROM categories") fun observeCategories(): Flow<List<CategoryEntity>>
+    @Query("SELECT * FROM categories") suspend fun getCategoriesList(): List<CategoryEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCategory(category: CategoryEntity)
+    @Query("DELETE FROM categories WHERE name = :name") suspend fun deleteCategory(name: String)
 
-    @Query("SELECT * FROM cards")
-    fun observeCards(): Flow<List<CardEntity>>
+    @Query("SELECT * FROM goals") fun observeGoals(): Flow<List<SavingsGoalEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertGoal(goal: SavingsGoalEntity)
+    @Delete suspend fun deleteGoal(goal: SavingsGoalEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertCard(card: CardEntity)
-
-    @Query("DELETE FROM cards WHERE last4 = :last4")
-    suspend fun deleteCard(last4: String)
-
-    @Query("SELECT * FROM budgets")
-    fun observeBudgets(): Flow<List<BudgetEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertBudget(budget: BudgetEntity)
-
-    @Query("DELETE FROM budgets WHERE category = :category")
-    suspend fun deleteBudget(category: String)
-
-    @Query("SELECT * FROM recurring")
-    fun observeRecurring(): Flow<List<RecurringEntity>>
-
-    @Query("SELECT * FROM recurring")
-    suspend fun getRecurringList(): List<RecurringEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertRecurring(recurring: RecurringEntity)
-
-    @Delete
-    suspend fun deleteRecurring(recurring: RecurringEntity)
-
-    @Query("SELECT * FROM categories")
-    fun observeCategories(): Flow<List<CategoryEntity>>
-
-    @Query("SELECT * FROM categories")
-    suspend fun getCategoriesList(): List<CategoryEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertCategory(category: CategoryEntity)
-
-    @Query("DELETE FROM categories WHERE name = :name")
-    suspend fun deleteCategory(name: String)
-
-    // МЕТОДЫ ДЛЯ КОПИЛКИ
-    @Query("SELECT * FROM goals")
-    fun observeGoals(): Flow<List<SavingsGoalEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertGoal(goal: SavingsGoalEntity)
-
-    @Delete
-    suspend fun deleteGoal(goal: SavingsGoalEntity)
+    @Query("SELECT * FROM exchange_rates") fun observeRates(): Flow<List<ExchangeRateEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertRate(rate: ExchangeRateEntity)
 
     @Query("DELETE FROM txs") suspend fun clearTxs()
     @Query("DELETE FROM cards") suspend fun clearCards()
@@ -137,18 +94,15 @@ interface TxDao {
     @Query("DELETE FROM recurring") suspend fun clearRecurring()
 }
 
-@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class], version = 8, exportSchema = false)
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class, ExchangeRateEntity::class], version = 9, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
-
     companion object {
         @Volatile private var INSTANCE: AppDb? = null
-
         fun get(context: Context): AppDb {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(context.applicationContext, AppDb::class.java, "uchet.db")
-                    .fallbackToDestructiveMigration()
-                    .build().also { INSTANCE = it }
+                    .fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }
