@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.kapt") // Изменено: KSP заменён на KAPT
 }
 
 android {
@@ -26,15 +26,12 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
-    
-    // ДОБАВЛЕНО: критически важно для работы FragmentActivity, тем AppCompat и BiometricPrompt
-    implementation("androidx.appcompat:appcompat:1.7.0") 
-    
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.fragment:fragment:1.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
-    
+
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -45,7 +42,7 @@ dependencies {
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    ksp("androidx.room:room-compiler:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion") // Изменено: ksp заменён на kapt
 
     implementation("com.google.mlkit:text-recognition:16.0.0")
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
