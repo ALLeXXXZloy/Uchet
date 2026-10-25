@@ -11,19 +11,21 @@ data class Tx(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val amountMinor: Long, 
     val type: TxType, 
-    val cardLast4: String? = null,
+    val cardId: String? = null, // Например "1226_UZS" или "CASH"
     val description: String = "", 
     val category: String = "📦 Другое",
     val timestamp: Long, 
     val source: String = "MANUAL",
-    val currency: String = "UZS", // НОВОЕ
-    val photoPath: String? = null // НОВОЕ
+    val currency: String = "UZS",
+    val photoPath: String? = null
 )
 
 @Entity(tableName = "cards")
 data class CardEntity(
-    @PrimaryKey val last4: String, 
-    val name: String, 
+    @PrimaryKey val id: String, // Например "1226_UZS" или "CASH"
+    val last4: String,          // Только 4 цифры "1226"
+    val name: String,           // Название банка
+    val currency: String,       // "UZS", "USD" и т.д.
     val initialBalanceMinor: Long
 )
 
@@ -33,7 +35,7 @@ data class BudgetEntity(@PrimaryKey val category: String, val limitMinor: Long)
 @Entity(tableName = "recurring")
 data class RecurringEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val amountMinor: Long, val type: TxType, val cardLast4: String? = null,
+    val amountMinor: Long, val type: TxType, val cardId: String? = null,
     val description: String = "", val category: String = "📦 Другое",
     val dayOfMonth: Int, val lastExecutedMonth: String = ""
 )
@@ -47,7 +49,6 @@ data class SavingsGoalEntity(
     val name: String, val targetAmountMinor: Long, val currentAmountMinor: Long = 0
 )
 
-// НОВАЯ ТАБЛИЦА ДЛЯ КУРСОВ ВАЛЮТ
 @Entity(tableName = "exchange_rates")
 data class ExchangeRateEntity(
     @PrimaryKey val currency: String, // USD, EUR, RUB
@@ -65,7 +66,7 @@ interface TxDao {
 
     @Query("SELECT * FROM cards") fun observeCards(): Flow<List<CardEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCard(card: CardEntity)
-    @Query("DELETE FROM cards WHERE last4 = :last4") suspend fun deleteCard(last4: String)
+    @Query("DELETE FROM cards WHERE id = :id") suspend fun deleteCard(id: String)
 
     @Query("SELECT * FROM budgets") fun observeBudgets(): Flow<List<BudgetEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertBudget(budget: BudgetEntity)
@@ -94,7 +95,7 @@ interface TxDao {
     @Query("DELETE FROM recurring") suspend fun clearRecurring()
 }
 
-@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class, ExchangeRateEntity::class], version = 9, exportSchema = false)
+@Database(entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class, ExchangeRateEntity::class], version = 10, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): TxDao
     companion object {
