@@ -4,15 +4,10 @@ import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
-// ==========================================
-// 1. СУЩНОСТИ (ENTITIES)
-// ==========================================
-
 enum class TxType(val label: String) {
     INCOME("Доход"),
     EXPENSE("Расход"),
-    TRANSFER("Перевод себе"),
-    ADJUSTMENT("Корректировка")
+    TRANSFER("Перевод")
 }
 
 @Entity(tableName = "txs")
@@ -21,7 +16,6 @@ data class Tx(
     val amountMinor: Long,
     val type: TxType,
     val cardId: String? = null,
-    val toCardId: String? = null,
     val description: String = "",
     val category: String = "",
     val timestamp: Long,
@@ -77,14 +71,8 @@ data class ExchangeRateEntity(
     val rateToUzs: Double
 )
 
-
-// ==========================================
-// 2. ИНТЕРФЕЙС ДЛЯ РАБОТЫ С БД (DAO)
-// ==========================================
-
 @Dao
 interface Dao {
-    // Транзакции
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
     fun observe(start: Long, end: Long): Flow<List<Tx>>
 
@@ -100,7 +88,6 @@ interface Dao {
     @Delete
     suspend fun delete(tx: Tx)
 
-    // Карты
     @Query("SELECT * FROM cards")
     fun observeCards(): Flow<List<CardEntity>>
 
@@ -110,7 +97,6 @@ interface Dao {
     @Query("DELETE FROM cards WHERE id = :id")
     suspend fun deleteCard(id: String)
 
-    // Бюджеты
     @Query("SELECT * FROM budgets")
     fun observeBudgets(): Flow<List<BudgetEntity>>
 
@@ -120,7 +106,6 @@ interface Dao {
     @Query("DELETE FROM budgets WHERE category = :category")
     suspend fun deleteBudget(category: String)
 
-    // Регулярные операции
     @Query("SELECT * FROM recurring")
     fun observeRecurring(): Flow<List<RecurringEntity>>
 
@@ -133,7 +118,6 @@ interface Dao {
     @Delete
     suspend fun deleteRecurring(r: RecurringEntity)
 
-    // Категории
     @Query("SELECT * FROM categories")
     fun observeCategories(): Flow<List<CategoryEntity>>
 
@@ -146,7 +130,6 @@ interface Dao {
     @Query("DELETE FROM categories WHERE name = :name")
     suspend fun deleteCategory(name: String)
 
-    // Копилка
     @Query("SELECT * FROM goals")
     fun observeGoals(): Flow<List<SavingsGoalEntity>>
 
@@ -156,14 +139,12 @@ interface Dao {
     @Delete
     suspend fun deleteGoal(goal: SavingsGoalEntity)
 
-    // Курсы валют
     @Query("SELECT * FROM rates")
     fun observeRates(): Flow<List<ExchangeRateEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRate(rate: ExchangeRateEntity)
 
-    // Очистка для восстановления бэкапа
     @Query("DELETE FROM txs")
     suspend fun clearTxs()
 
@@ -177,22 +158,9 @@ interface Dao {
     suspend fun clearRecurring()
 }
 
-
-// ==========================================
-// 3. САМА БАЗА ДАННЫХ (APP DB)
-// ==========================================
-
 @Database(
-    entities = [
-        Tx::class, 
-        CardEntity::class, 
-        BudgetEntity::class, 
-        RecurringEntity::class, 
-        CategoryEntity::class, 
-        SavingsGoalEntity::class, 
-        ExchangeRateEntity::class
-    ],
-    version = 2,
+    entities = [Tx::class, CardEntity::class, BudgetEntity::class, RecurringEntity::class, CategoryEntity::class, SavingsGoalEntity::class, ExchangeRateEntity::class],
+    version = 1, // Откатили версию
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -209,7 +177,7 @@ abstract class AppDb : RoomDatabase() {
                     AppDb::class.java,
                     "uchet_database"
                 )
-                .fallbackToDestructiveMigration() // Автоматически обновит БД при изменении структуры
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance
