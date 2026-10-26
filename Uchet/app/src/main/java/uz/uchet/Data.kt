@@ -72,7 +72,7 @@ data class ExchangeRateEntity(
 )
 
 @Dao
-interface Dao {
+interface AppDao {
     @Query("SELECT * FROM txs WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp DESC")
     fun observe(start: Long, end: Long): Flow<List<Tx>>
 
@@ -164,7 +164,7 @@ interface Dao {
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
-    abstract fun dao(): Dao
+    abstract fun dao(): AppDao
 
     companion object {
         @Volatile
