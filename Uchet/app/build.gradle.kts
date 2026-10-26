@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp") // Возвращаем KSP
+    id("com.google.devtools.ksp") 
 }
 
 android {
@@ -39,8 +39,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // ОБНОВЛЕНО: Room 2.7.0 для поддержки Kotlin 2.0 и KSP2
-    val roomVersion = "2.7.0" 
+    val roomVersion = "2.6.1" // Откатили на стабильную версию
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
