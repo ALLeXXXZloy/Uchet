@@ -26,7 +26,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0") // ДОБАВЛЕНО: нужно для FragmentActivity и биометрии
+    implementation("androidx.appcompat:appcompat:1.7.0") 
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.fragment:fragment:1.8.0")
@@ -39,7 +39,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    val roomVersion = "2.6.1"
+    // ИСПРАВЛЕНО: Обновляем Room до 2.7.1 для поддержки Kotlin 2.0 и KSP2
+    val roomVersion = "2.7.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
